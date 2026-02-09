@@ -1,0 +1,150 @@
+[
+  {
+    "songTitle": "C Major Scale",
+    "bpm": 90,
+    "key": "C",
+    "notes": [
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "F5", "duration": 0.5, "hole": "5D"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "A5", "duration": 0.5, "hole": "6D"},
+      {"note": "B5", "duration": 0.5, "hole": "7D"},
+      {"note": "C6", "duration": 1.0, "hole": "7B"},
+      {"note": "B5", "duration": 0.5, "hole": "7D"},
+      {"note": "A5", "duration": 0.5, "hole": "6D"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "F5", "duration": 0.5, "hole": "5D"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "C5", "duration": 1.0, "hole": "4B"}
+    ]
+  },
+  {
+    "songTitle": "Mary Had a Little Lamb",
+    "bpm": 96,
+    "key": "C",
+    "notes": [
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "E5", "duration": 1.0, "hole": "5B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "D5", "duration": 1.0, "hole": "4D"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "G5", "duration": 1.0, "hole": "6B"}
+    ]
+  },
+  {
+    "songTitle": "Twinkle Twinkle",
+    "bpm": 90,
+    "key": "C",
+    "notes": [
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "A5", "duration": 0.5, "hole": "6D"},
+      {"note": "A5", "duration": 0.5, "hole": "6D"},
+      {"note": "G5", "duration": 1.0, "hole": "6B"},
+      {"note": "F5", "duration": 0.5, "hole": "5D"},
+      {"note": "F5", "duration": 0.5, "hole": "5D"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "C5", "duration": 1.0, "hole": "4B"}
+    ]
+  },
+  {
+    "songTitle": "Oh Susannah",
+    "bpm": 104,
+    "key": "C",
+    "notes": [
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "C5", "duration": 1.0, "hole": "4B"}
+    ]
+  },
+  {
+    "songTitle": "Starter Blues",
+    "bpm": 98,
+    "key": "C",
+    "notes": [
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "A5", "duration": 0.5, "hole": "6D"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "C5", "duration": 1.0, "hole": "4B"}
+    ]
+  },
+  {
+    "songTitle": "C Chord Drill",
+    "bpm": 88,
+    "key": "C",
+    "notes": [
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "C6", "duration": 1.0, "hole": "7B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "C5", "duration": 1.0, "hole": "4B"}
+    ]
+  },
+  {
+    "songTitle": "I-IV-V Chord Walk",
+    "bpm": 92,
+    "key": "C",
+    "notes": [
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "F5", "duration": 0.5, "hole": "5D"},
+      {"note": "A5", "duration": 0.5, "hole": "6D"},
+      {"note": "C6", "duration": 0.5, "hole": "7B"},
+      {"note": "A5", "duration": 0.5, "hole": "6D"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "B5", "duration": 0.5, "hole": "7D"},
+      {"note": "D6", "duration": 0.5, "hole": "8D"},
+      {"note": "B5", "duration": 0.5, "hole": "7D"},
+      {"note": "F5", "duration": 0.5, "hole": "5D"},
+      {"note": "A5", "duration": 0.5, "hole": "6D"},
+      {"note": "C6", "duration": 0.5, "hole": "7B"},
+      {"note": "A5", "duration": 0.5, "hole": "6D"},
+      {"note": "C5", "duration": 0.5, "hole": "4B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "G5", "duration": 0.5, "hole": "6B"},
+      {"note": "E5", "duration": 0.5, "hole": "5B"},
+      {"note": "D5", "duration": 0.5, "hole": "4D"},
+      {"note": "C5", "duration": 1.0, "hole": "4B"}
+    ]
+  }
+]
