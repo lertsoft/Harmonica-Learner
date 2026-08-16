@@ -15,8 +15,10 @@ struct DetectedPitchView: View {
                         .foregroundStyle(AppColors.textTertiary)
 
                     Text(pitch?.fullName ?? "--")
-                        .font(.custom("AvenirNextCondensed-DemiBold", size: 30))
+                        .font(.custom("AvenirNextCondensed-DemiBold", size: 30, relativeTo: .title2))
                         .foregroundStyle(noteColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
                         .contentTransition(.numericText())
                 }
 
@@ -26,10 +28,13 @@ struct DetectedPitchView: View {
                     Text(centsString)
                         .font(AppTypography.mono.monospacedDigit())
                         .foregroundStyle(centsColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
 
                     Text(tuningLabel)
                         .font(AppTypography.caption)
                         .foregroundStyle(AppColors.textSecondary)
+                        .lineLimit(1)
                 }
             }
 

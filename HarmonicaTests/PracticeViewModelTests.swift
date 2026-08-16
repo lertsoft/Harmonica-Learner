@@ -39,11 +39,22 @@ final class PracticeViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.matchState, .idle)
     }
 
-    func testHandleFrequencyAdvancesAfterThreeConsecutiveHits() {
+    func testValidFrequencyBelowSensitivityIsIgnored() {
+        let viewModel = makeViewModelWithSong(["A4"])
+        viewModel.sensitivity = 0.05
+
+        viewModel.handleFrequency(440, amplitude: 0.01)
+
+        XCTAssertNil(viewModel.detectedPitch)
+        XCTAssertEqual(viewModel.matchState, .idle)
+    }
+
+    func testHandleFrequencyAdvancesAfterThreeHundredMillisecondsOfHits() {
         let viewModel = makeViewModelWithSong(["A4", "B4"])
 
-        viewModel.handleFrequency(440, amplitude: 0.2)
-        viewModel.handleFrequency(440, amplitude: 0.2)
+        for _ in 0..<5 {
+            viewModel.handleFrequency(440, amplitude: 0.2)
+        }
         XCTAssertEqual(viewModel.currentNoteIndex, 0)
 
         viewModel.handleFrequency(440, amplitude: 0.2)
@@ -52,15 +63,17 @@ final class PracticeViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.matchState, .hit)
     }
 
-    func testMissResetsHitStreakSoThreeNewHitsAreRequired() {
+    func testMissResetsSustainedHitWindow() {
         let viewModel = makeViewModelWithSong(["A4", "B4"])
 
-        viewModel.handleFrequency(440, amplitude: 0.2)
-        viewModel.handleFrequency(440, amplitude: 0.2)
+        for _ in 0..<5 {
+            viewModel.handleFrequency(440, amplitude: 0.2)
+        }
         viewModel.handleFrequency(523.251, amplitude: 0.2)
 
-        viewModel.handleFrequency(440, amplitude: 0.2)
-        viewModel.handleFrequency(440, amplitude: 0.2)
+        for _ in 0..<5 {
+            viewModel.handleFrequency(440, amplitude: 0.2)
+        }
         XCTAssertEqual(viewModel.currentNoteIndex, 0)
 
         viewModel.handleFrequency(440, amplitude: 0.2)

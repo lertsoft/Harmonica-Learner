@@ -26,7 +26,21 @@ struct NoteMapper {
         return NotePitch(noteName: name, octave: octave, centsOffset: cents)
     }
 
-    private static func frequency(forMidi midi: Int) -> Double {
+    static func frequency(for noteName: String) -> Double? {
+        guard let midi = midiNumber(for: noteName) else { return nil }
+        return frequency(forMidi: midi)
+    }
+
+    static func midiNumber(for noteName: String) -> Int? {
+        let trimmed = noteName.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard let octaveCharacter = trimmed.last,
+              let octave = Int(String(octaveCharacter)) else { return nil }
+        let pitchClass = String(trimmed.dropLast())
+        guard let pitchIndex = noteNames.firstIndex(of: pitchClass) else { return nil }
+        return (octave + 1) * 12 + pitchIndex
+    }
+
+    static func frequency(forMidi midi: Int) -> Double {
         440.0 * pow(2.0, (Double(midi) - 69) / 12.0)
     }
 }

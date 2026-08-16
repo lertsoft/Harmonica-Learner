@@ -1,6 +1,7 @@
 import XCTest
 @testable import Harmonica
 
+@MainActor
 final class FreestyleRecordingTests: XCTestCase {
     func testHasAudioPlaybackReflectsAudioFileNamePresence() {
         let withAudio = makeRecording(audioFileName: "sample.m4a")
@@ -22,7 +23,16 @@ final class FreestyleRecordingTests: XCTestCase {
         XCTAssertEqual(song.bpm, 90)
         XCTAssertEqual(song.key, "G")
         XCTAssertEqual(song.notes, [note])
-        XCTAssertEqual(song.id, "Session")
+        XCTAssertEqual(song.id, "recording:\(recording.id.uuidString)")
+    }
+
+    func testImportedSourceRoundTripsThroughJSON() throws {
+        let recording = makeRecording(source: .importedSong)
+
+        let encoded = try JSONEncoder().encode(recording)
+        let decoded = try JSONDecoder().decode(FreestyleRecording.self, from: encoded)
+
+        XCTAssertEqual(decoded.source, .importedSong)
     }
 
     func testMakeTitleUsesExpectedPrefixAndIDFragment() {
@@ -41,7 +51,8 @@ final class FreestyleRecordingTests: XCTestCase {
         layoutRawValue: String = HarmonicaLayout.diatonicC.rawValue,
         audioFileName: String? = "clip.m4a",
         notes: [HarmonicaNoteEvent] = [HarmonicaNoteEvent(note: "C5", duration: 0.5, hole: "4B")],
-        duration: TimeInterval = 2
+        duration: TimeInterval = 2,
+        source: RecordingSource = .freestyle
     ) -> FreestyleRecording {
         FreestyleRecording(
             id: id,
@@ -51,7 +62,8 @@ final class FreestyleRecordingTests: XCTestCase {
             layoutRawValue: layoutRawValue,
             audioFileName: audioFileName,
             notes: notes,
-            duration: duration
+            duration: duration,
+            source: source
         )
     }
 }

@@ -50,7 +50,8 @@ final class FreestyleRecordingStore {
                     layoutRawValue: recording.layoutRawValue,
                     audioFileName: nil,
                     notes: recording.notes,
-                    duration: recording.duration
+                    duration: recording.duration,
+                    source: recording.source
                 )
 
                 if !withoutAudio.notes.isEmpty {
@@ -87,6 +88,31 @@ final class FreestyleRecordingStore {
     }
 
     @discardableResult
+    func rename(id: UUID, to proposedTitle: String) throws -> FreestyleRecording? {
+        try ensureStorageDirectories()
+        let title = proposedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+
+        var all = loadAll()
+        guard let index = all.firstIndex(where: { $0.id == id }) else { return nil }
+        let existing = all[index]
+        let updated = FreestyleRecording(
+            id: existing.id,
+            title: title,
+            createdAt: existing.createdAt,
+            key: existing.key,
+            layoutRawValue: existing.layoutRawValue,
+            audioFileName: existing.audioFileName,
+            notes: existing.notes,
+            duration: existing.duration,
+            source: existing.source
+        )
+        all[index] = updated
+        try writeIndex(all.sorted { $0.createdAt > $1.createdAt })
+        return updated
+    }
+
+    @discardableResult
     func removeAudio(id: UUID) throws -> FreestyleRecording? {
         try ensureStorageDirectories()
         var all = loadAll()
@@ -105,7 +131,8 @@ final class FreestyleRecordingStore {
             layoutRawValue: existing.layoutRawValue,
             audioFileName: nil,
             notes: existing.notes,
-            duration: existing.duration
+            duration: existing.duration,
+            source: existing.source
         )
         all[index] = updated
         try writeIndex(all.sorted { $0.createdAt > $1.createdAt })

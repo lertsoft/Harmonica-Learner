@@ -2,6 +2,11 @@ import XCTest
 @testable import Harmonica
 
 final class NoteMapperTests: XCTestCase {
+    func testFrequencyAndMIDIRoundTripForScientificNoteName() {
+        XCTAssertEqual(NoteMapper.midiNumber(for: "A4"), 69)
+        XCTAssertEqual(NoteMapper.frequency(for: "A4") ?? 0, 440, accuracy: 0.0001)
+        XCTAssertNil(NoteMapper.frequency(for: "not-a-note"))
+    }
     func testPitchMapsConcertA() {
         let mapped = NoteMapper.pitch(for: 440)
 

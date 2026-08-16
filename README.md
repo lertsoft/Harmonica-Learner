@@ -18,7 +18,14 @@ This is anative iOS app that helps you learn and practice your harmonica skills.
 - **Free play with recording** — Switch to freestyle mode to play freely while the app captures your notes and audio.
 - **Audio + note capture** — Records M4A audio and simultaneously logs every detected note event with timing and duration data.
 - **Playback** — Replay your recorded freestyle sessions with full audio playback.
-- **Session management** — Freestyle recordings are automatically saved and appear alongside bundled songs in the song picker. You can also strip the background audio while keeping captured notes for learning mode.
+- **Silent note-by-note practice** — Saved performances become visual note targets automatically; audio stays off unless you choose to hear a reference note or the original recording.
+- **Session management** — Freestyle recordings are automatically saved and appear alongside bundled songs in the song picker. Saved items can be renamed or deleted, and playback audio can be removed while keeping captured notes.
+
+### ➕ Add Your Own Songs
+- **Audio import** — Use the add button to choose an audio file from Files.
+- **Harmonica suggestions** — The app analyzes dominant pitches and turns them into a compact line of playable harmonica notes with hole and blow/draw guidance.
+- **Full-mix fallback** — If a song has no clear lead pitch, the app supplies a starter harmonica phrase so the song still has useful practice targets.
+- **Optional listening** — Imported audio is preserved for on-demand playback; practicing the suggested line remains silent by default.
 
 ### 📖 Built-in Song Library
 Includes 7 bundled songs ranging from fundamentals to blues:
@@ -38,6 +45,7 @@ Includes 7 bundled songs ranging from fundamentals to blues:
 - **iOS 18 Mesh Gradients** — Rich, dynamic backgrounds using `MeshGradient` with fallbacks for older versions.
 - **Spring animations** — Smooth, physics-based animations throughout (note transitions, success pulses, panel gestures).
 - **Draggable controls panel** — Swipe-down to dismiss the controls panel; tap to bring it back.
+- **Adaptive layouts** — Scroll-safe phone layouts, compact landscape controls, two-column wide-screen practice, and Dynamic Type support keep controls usable without clipping or overlap.
 - **Onboarding flow** — First-launch overlay explaining blow/draw mechanics and microphone permissions.
 
 ---
@@ -50,7 +58,9 @@ Harmonica/
 │   ├── HarmonicaLearnerApp.swift     # App entry point
 │   └── ContentView.swift             # Root view
 ├── Audio/
-│   └── AudioEngineService.swift      # AudioKit pitch detection & freestyle recording
+│   ├── AudioEngineService.swift      # AudioKit pitch detection & freestyle recording
+│   ├── ImportedSongAnalyzer.swift    # Audio-file pitch analysis and harmonica suggestions
+│   └── NotePlaybackService.swift     # Optional synthesized reference-note playback
 ├── Models/
 │   ├── AttemptToleranceModel.swift    # Adaptive pitch tolerance curve
 │   ├── FreestyleRecording.swift       # Freestyle session data model
@@ -86,6 +96,8 @@ Harmonica/
 - **MVVM pattern** — `PracticeViewModel` owns all state; views are declarative and stateless.
 - **Combine-driven** — Audio service publishes frequency/amplitude streams that the view model processes reactively.
 - **Local persistence** — Freestyle recordings stored as JSON index + M4A audio files in the app's Documents directory.
+- **Stable song identity** — Saved songs use UUID-backed identifiers, so renames and duplicate titles do not break selection or persistence.
+- **Offline song suggestions** — Imported audio is analyzed locally; no account or network upload is required.
 - **Adaptive difficulty** — `AttemptToleranceModel` uses linear interpolation from a forgiving starting tolerance down to a precise target over configurable attempts.
 
 ---
@@ -99,6 +111,7 @@ HarmonicaTests/
 ├── FreestyleRecordingTests.swift
 ├── HarmonicaHoleTests.swift
 ├── HarmonicaLayoutTests.swift
+├── ImportedSongAnalyzerTests.swift
 ├── NoteEvaluationTests.swift
 ├── NoteMapperTests.swift
 ├── PracticeViewModelTests.swift

@@ -16,7 +16,9 @@ final class PracticeViewModel: ObservableObject {
     @Published var isFreestyleMode: Bool = false
     @Published private(set) var isFreestyleRecording: Bool = false
     @Published private(set) var isFreestylePlayingAudio: Bool = false
+    @Published private(set) var isReferenceNotePlaying: Bool = false
     @Published private(set) var freestyleElapsed: TimeInterval = 0
+    @Published private(set) var isImportingSong: Bool = false
 
     @Published private(set) var bundledSongs: [HarmonicaSong] = []
     @Published private(set) var freestyleRecordings: [FreestyleRecording] = []
@@ -24,14 +26,16 @@ final class PracticeViewModel: ObservableObject {
     @Published var noticeMessage: String?
 
     lazy var audioService = AudioEngineService()
+    lazy var notePlaybackService = NotePlaybackService()
     let toleranceModel = AttemptToleranceModel(startCents: 30, targetCents: 15, attemptsToTarget: 20)
 
     private let evaluator: NoteEvaluation
     private let recordingStore: FreestyleRecordingStore
 
     private var hitStreak: Int = 0
+    // PitchTap publishes at most every 50 ms, so six stable samples represent a 300 ms hold.
+    private let sustainedHitSampleCount = 6
     private var cancellables = Set<AnyCancellable>()
-    private let isRunningTests: Bool
     private let shouldBindAudioService: Bool
 
     private var freestyleTimer: AnyCancellable?
@@ -52,7 +56,6 @@ final class PracticeViewModel: ObservableObject {
     ) {
         let runningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
             || NSClassFromString("XCTestCase") != nil
-        self.isRunningTests = runningTests
         self.shouldBindAudioService = enableAudioBindings ?? !runningTests
         self.recordingStore = recordingStore
         self.evaluator = NoteEvaluation(toleranceModel: toleranceModel)
@@ -105,6 +108,15 @@ final class PracticeViewModel: ObservableObject {
         return !recording.notes.isEmpty
     }
 
+    var selectedRecordingIsImportedSong: Bool {
+        selectedRecording?.source == .importedSong
+    }
+
+    var currentTargetEvent: HarmonicaNoteEvent? {
+        guard currentNoteIndex >= 0, currentNoteIndex < currentSongNotes.count else { return nil }
+        return currentSongNotes[currentNoteIndex]
+    }
+
     func reloadFreestyleRecordings() {
         freestyleRecordings = recordingStore.loadAll()
         rebuildMergedSongs(keepCurrentSelection: true)
@@ -135,7 +147,7 @@ final class PracticeViewModel: ObservableObject {
         let hasFrequencySignal = frequency > 20 && frequency < 5_000
         let hasAmplitudeSignal = amplitude >= sensitivity
 
-        guard hasFrequencySignal || hasAmplitudeSignal else {
+        guard hasFrequencySignal && hasAmplitudeSignal else {
             if isFreestyleRecording {
                 processFreestyleCapture(pitch: nil, timestamp: Date())
             }
@@ -157,6 +169,13 @@ final class PracticeViewModel: ObservableObject {
             return
         }
 
+
+        guard !isReferenceNotePlaying, !isFreestylePlayingAudio else {
+            matchState = .idle
+            hitStreak = 0
+            return
+        }
+
         if isFreestyleMode {
             matchState = .idle
             hitStreak = 0
@@ -168,7 +187,7 @@ final class PracticeViewModel: ObservableObject {
 
         if matchState == .hit {
             hitStreak += 1
-            if hitStreak >= 3 {
+            if hitStreak >= sustainedHitSampleCount {
                 advanceNote()
                 hitStreak = 0
             }
@@ -179,6 +198,12 @@ final class PracticeViewModel: ObservableObject {
 
     func handleSelectedSongChange(from oldSong: HarmonicaSong?, to newSong: HarmonicaSong?) {
         guard oldSong?.id != newSong?.id else { return }
+        if shouldBindAudioService {
+            notePlaybackService.stop()
+        }
+        if isFreestylePlayingAudio {
+            stopSelectedFreestyleAudio()
+        }
         currentNoteIndex = 0
         hitStreak = 0
         matchState = .idle
@@ -192,8 +217,14 @@ final class PracticeViewModel: ObservableObject {
             }
         }
 
-        if let newSong, let recording = recordingBySongId[newSong.id], recording.notes.isEmpty {
-            scheduleNotice("This freestyle recording has no captured notes.")
+        if let newSong, let recording = recordingBySongId[newSong.id] {
+            selectedKey = recording.key
+            if let recordedLayout = HarmonicaLayout(rawValue: recording.layoutRawValue) {
+                selectedLayout = recordedLayout
+            }
+            if recording.notes.isEmpty {
+                scheduleNotice("This saved recording has no captured notes.")
+            }
         }
     }
 
@@ -267,7 +298,8 @@ final class PracticeViewModel: ObservableObject {
             layoutRawValue: (freestyleCaptureLayout ?? selectedLayout).rawValue,
             audioFileName: audioFileName,
             notes: captured,
-            duration: max(recordingDuration, 0)
+            duration: max(recordingDuration, 0),
+            source: .freestyle
         )
 
         try recordingStore.save(recording)
@@ -293,11 +325,125 @@ final class PracticeViewModel: ObservableObject {
             scheduleNotice("This freestyle session is notes-only.")
             return
         }
+        notePlaybackService.stop()
         try audioService.playFreestyleAudio(from: audioURL)
     }
 
     func stopSelectedFreestyleAudio() {
         audioService.stopFreestyleAudio()
+    }
+
+    func playCurrentReferenceNote() throws {
+        guard let event = currentTargetEvent else { return }
+        if isFreestylePlayingAudio {
+            stopSelectedFreestyleAudio()
+        }
+        try notePlaybackService.play(noteName: event.note, duration: event.duration)
+    }
+
+    func stopCurrentReferenceNote() {
+        notePlaybackService.stop()
+    }
+
+    func renameSelectedRecording(to title: String) throws {
+        guard let recording = selectedRecording else { return }
+        guard let renamed = try recordingStore.rename(id: recording.id, to: title) else {
+            scheduleNotice("Enter a name before saving.")
+            return
+        }
+
+        freestyleRecordings = recordingStore.loadAll()
+        rebuildMergedSongs(keepCurrentSelection: false)
+        selectedSong = songs.first(where: { $0.id == renamed.asSong.id })
+        scheduleNotice("Renamed to “\(renamed.title)”.")
+    }
+
+    func deleteSelectedRecording() throws {
+        guard let recording = selectedRecording else { return }
+        if isFreestylePlayingAudio {
+            stopSelectedFreestyleAudio()
+        }
+        try recordingStore.delete(id: recording.id)
+        freestyleRecordings = recordingStore.loadAll()
+        rebuildMergedSongs(keepCurrentSelection: false)
+        scheduleNotice("“\(recording.title)” was deleted.")
+    }
+
+    func importSong(from sourceURL: URL) {
+        guard !isImportingSong else { return }
+        let didAccess = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                sourceURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let recordingID = UUID()
+        let fileExtension = sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension.lowercased()
+        let audioFileName = "\(recordingID.uuidString).\(fileExtension)"
+        let destinationURL = recordingStore.audioURL(forFileName: audioFileName)
+
+        do {
+            try FileManager.default.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+        } catch {
+            scheduleNotice("Could not add that audio file: \(error.localizedDescription)")
+            return
+        }
+
+        isImportingSong = true
+        let title = sourceURL.deletingPathExtension().lastPathComponent
+        let layout = selectedLayout
+        let key = selectedKey
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let analysis = try ImportedSongAnalyzer().analyze(url: destinationURL, layout: layout)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    let recording = FreestyleRecording(
+                        id: recordingID,
+                        title: title,
+                        createdAt: Date(),
+                        key: key,
+                        layoutRawValue: layout.rawValue,
+                        audioFileName: audioFileName,
+                        notes: analysis.notes,
+                        duration: analysis.duration,
+                        source: .importedSong
+                    )
+
+                    do {
+                        try self.recordingStore.save(recording)
+                        self.freestyleRecordings = self.recordingStore.loadAll()
+                        self.rebuildMergedSongs(keepCurrentSelection: false)
+                        self.selectedSong = self.songs.first(where: { $0.id == recording.asSong.id })
+                        self.isFreestyleMode = false
+                        if analysis.usedFallback {
+                            self.scheduleNotice("Song added with a starter harmonica phrase; the mix had no clear lead pitch.")
+                        } else {
+                            self.scheduleNotice("Song added with \(analysis.notes.count) suggested harmonica notes.")
+                        }
+                    } catch {
+                        try? FileManager.default.removeItem(at: destinationURL)
+                        self.scheduleNotice("Could not save the imported song: \(error.localizedDescription)")
+                    }
+                    self.isImportingSong = false
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: destinationURL)
+                DispatchQueue.main.async {
+                    self?.isImportingSong = false
+                    self?.scheduleNotice("Could not analyze that song: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     func removeSelectedFreestyleAudio() throws {
@@ -458,6 +604,12 @@ final class PracticeViewModel: ObservableObject {
         audioService.$isPlayingFreestyleAudio
             .sink { [weak self] value in
                 self?.isFreestylePlayingAudio = value
+            }
+            .store(in: &cancellables)
+
+        notePlaybackService.$isPlaying
+            .sink { [weak self] value in
+                self?.isReferenceNotePlaying = value
             }
             .store(in: &cancellables)
     }

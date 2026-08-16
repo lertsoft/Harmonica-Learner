@@ -6,13 +6,18 @@ struct ProgressTrackView: View {
     let matchState: NoteMatchState
     let layout: HarmonicaLayout
 
-    private let noteWidth: CGFloat = 58
-    private let noteSpacing: CGFloat = 10
+    @ScaledMetric(relativeTo: .body) private var scaledNoteWidth: CGFloat = 58
+    @ScaledMetric(relativeTo: .body) private var scaledNoteHeight: CGFloat = 58
+    @ScaledMetric(relativeTo: .body) private var scaledNoteSpacing: CGFloat = 10
+
+    private var noteWidth: CGFloat { min(90, max(58, scaledNoteWidth)) }
+    private var noteHeight: CGFloat { min(86, max(58, scaledNoteHeight)) }
+    private var noteSpacing: CGFloat { min(16, max(8, scaledNoteSpacing)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(song?.songTitle ?? "No Song")
+                Text(displaySongTitle)
                     .font(AppTypography.bodyStrong)
                     .foregroundStyle(AppColors.textPrimary)
                     .lineLimit(1)
@@ -44,7 +49,7 @@ struct ProgressTrackView: View {
                 .offset(x: centerX - noteWidth / 2 + offset)
                 .animation(.spring(response: 0.38, dampingFraction: 0.82), value: currentNoteIndex)
             }
-            .frame(height: 58)
+            .frame(height: noteHeight)
             .mask(
                 LinearGradient(
                     colors: [.clear, .white, .white, .white, .clear],
@@ -88,6 +93,13 @@ struct ProgressTrackView: View {
         let progress = CGFloat(currentNoteIndex + 1) / CGFloat(song.notes.count)
         return totalWidth * min(1, max(0, progress))
     }
+
+    private var displaySongTitle: String {
+        guard let title = song?.songTitle else { return "No Song" }
+        let parts = title.components(separatedBy: " • ")
+        guard parts.first == "Freestyle", parts.count >= 2 else { return title }
+        return "Freestyle • \(parts[1])"
+    }
 }
 
 enum NoteChipState {
@@ -105,14 +117,18 @@ struct NoteChipView: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            Text(note)
-                .font(AppTypography.bodyStrong)
+            Text(tabText)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(textColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
 
-            if let hole {
-                Text(hole.displayName)
+            if hole != nil {
+                Text(note)
                     .font(AppTypography.caption)
                     .foregroundStyle(textColor.opacity(0.75))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
             }
         }
         .frame(maxWidth: .infinity)
@@ -151,6 +167,11 @@ struct NoteChipView: View {
         case .current, .active: return AppColors.textPrimary
         case .upcoming: return AppColors.textTertiary
         }
+    }
+
+    private var tabText: String {
+        guard let hole else { return "—" }
+        return "\(hole.airflow == .blow ? "+" : "−")\(hole.index)"
     }
 }
 

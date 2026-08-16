@@ -90,13 +90,13 @@ struct AppGradients {
 }
 
 struct AppTypography {
-    static let title: Font = .custom("AvenirNextCondensed-DemiBold", size: 28)
-    static let hero: Font = .custom("AvenirNextCondensed-DemiBold", size: 52)
-    static let sectionLabel: Font = .custom("AvenirNext-DemiBold", size: 12)
-    static let body: Font = .custom("AvenirNext-Medium", size: 15)
-    static let bodyStrong: Font = .custom("AvenirNext-DemiBold", size: 15)
-    static let caption: Font = .custom("AvenirNext-Regular", size: 12)
-    static let mono: Font = .custom("Menlo-Bold", size: 14)
+    static let title: Font = .custom("AvenirNextCondensed-DemiBold", size: 28, relativeTo: .title)
+    static let hero: Font = .custom("AvenirNextCondensed-DemiBold", size: 52, relativeTo: .largeTitle)
+    static let sectionLabel: Font = .custom("AvenirNext-DemiBold", size: 12, relativeTo: .caption)
+    static let body: Font = .custom("AvenirNext-Medium", size: 15, relativeTo: .body)
+    static let bodyStrong: Font = .custom("AvenirNext-DemiBold", size: 15, relativeTo: .body)
+    static let caption: Font = .custom("AvenirNext-Regular", size: 12, relativeTo: .caption)
+    static let mono: Font = .custom("Menlo-Bold", size: 14, relativeTo: .body)
 }
 
 struct BackgroundGradientView: View {

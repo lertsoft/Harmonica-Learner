@@ -39,4 +39,15 @@ enum HarmonicaLayout: String, CaseIterable, Identifiable {
     func hole(for noteName: String) -> HarmonicaHole? {
         noteToHole[noteName]
     }
+
+    func nearestPlayableNote(to frequency: Double) -> String? {
+        guard let detected = NoteMapper.pitch(for: frequency),
+              let detectedMIDI = NoteMapper.midiNumber(for: detected.fullName) else { return nil }
+
+        return noteToHole.keys.min { left, right in
+            let leftMIDI = NoteMapper.midiNumber(for: left) ?? detectedMIDI
+            let rightMIDI = NoteMapper.midiNumber(for: right) ?? detectedMIDI
+            return abs(leftMIDI - detectedMIDI) < abs(rightMIDI - detectedMIDI)
+        }
+    }
 }

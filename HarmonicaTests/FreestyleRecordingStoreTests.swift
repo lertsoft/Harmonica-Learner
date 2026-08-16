@@ -116,6 +116,29 @@ final class FreestyleRecordingStoreTests: XCTestCase {
         XCTAssertNil(store.audioURL(for: emptyName))
     }
 
+    func testRenamePreservesRecordingDataAndAudioReference() throws {
+        let recording = makeRecording(title: "Before", audioFileName: "rename.m4a")
+        try createAudioFile(named: "rename.m4a")
+        try store.save(recording)
+
+        let renamed = try store.rename(id: recording.id, to: "  My First Song  ")
+
+        XCTAssertEqual(renamed?.title, "My First Song")
+        XCTAssertEqual(renamed?.notes, recording.notes)
+        XCTAssertEqual(renamed?.audioFileName, recording.audioFileName)
+        XCTAssertEqual(store.loadAll().first?.title, "My First Song")
+    }
+
+    func testRenameRejectsBlankTitle() throws {
+        let recording = makeRecording(title: "Keep Me")
+        try store.save(recording)
+
+        let renamed = try store.rename(id: recording.id, to: "   ")
+
+        XCTAssertNil(renamed)
+        XCTAssertEqual(store.loadAll().first?.title, "Keep Me")
+    }
+
     private func makeRecording(
         id: UUID = UUID(),
         title: String = "Session",
