@@ -7,10 +7,14 @@ struct ControlsView: View {
     let canPlayFreestyleAudio: Bool
     let isFreestylePlayingAudio: Bool
     let isFreestyleSong: Bool
+    let isImportedSong: Bool
+    let canPlaySynthesizedCover: Bool
+    let isSynthesizedCoverPlaying: Bool
     let onPrimaryAction: () -> Void
     let onShowSettings: () -> Void
     let onToggleFreestylePlayback: () -> Void
     let onRemoveFreestyleAudio: () -> Void
+    let onToggleSynthesizedCover: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -27,16 +31,26 @@ struct ControlsView: View {
             }
             .buttonStyle(StudioControlButtonStyle(isProminent: true, tint: primaryTint))
 
-            if isFreestyleSong && !isFreestyleMode {
+            if !isFreestyleMode && (isFreestyleSong || canPlaySynthesizedCover) {
                 Menu {
+                    if canPlaySynthesizedCover {
+                        Button(action: onToggleSynthesizedCover) {
+                            Label(
+                                isSynthesizedCoverPlaying ? "Stop Harmonica Cover" : "Hear Harmonica Cover",
+                                systemImage: isSynthesizedCoverPlaying ? "stop.fill" : "music.note.list"
+                            )
+                        }
+                    }
                     if canPlayFreestyleAudio {
                         Button(action: onToggleFreestylePlayback) {
-                            Label(isFreestylePlayingAudio ? "Stop Saved Audio" : "Hear Saved Audio",
+                            Label(isFreestylePlayingAudio ? "Stop Source Audio" : sourceAudioTitle,
                                   systemImage: isFreestylePlayingAudio ? "stop.fill" : "speaker.wave.2.fill")
                         }
                     }
-                    Button(role: .destructive, action: onRemoveFreestyleAudio) {
-                        Label("Remove Background Audio", systemImage: "speaker.slash.fill")
+                    if isFreestyleSong && canPlayFreestyleAudio {
+                        Button(role: .destructive, action: onRemoveFreestyleAudio) {
+                            Label("Remove Stored Audio", systemImage: "speaker.slash.fill")
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -48,6 +62,10 @@ struct ControlsView: View {
         }
         .padding(10)
         .liquidGlass(cornerRadius: 18, intensity: 0.04)
+    }
+
+    private var sourceAudioTitle: String {
+        isImportedSong ? "Hear Imported Source" : "Hear Saved Recording"
     }
 
     private var primaryTitle: String {
@@ -85,7 +103,9 @@ struct StudioControlButtonStyle: ButtonStyle {
         AppColors.backgroundDeep.ignoresSafeArea()
         ControlsView(isAudioRunning: false, isFreestyleMode: false, isFreestyleRecording: false,
                      canPlayFreestyleAudio: false, isFreestylePlayingAudio: false, isFreestyleSong: false,
-                     onPrimaryAction: {}, onShowSettings: {}, onToggleFreestylePlayback: {}, onRemoveFreestyleAudio: {})
+                     isImportedSong: false, canPlaySynthesizedCover: true, isSynthesizedCoverPlaying: false,
+                     onPrimaryAction: {}, onShowSettings: {}, onToggleFreestylePlayback: {},
+                     onRemoveFreestyleAudio: {}, onToggleSynthesizedCover: {})
             .padding()
     }
 }

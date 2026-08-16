@@ -3,6 +3,9 @@ import Foundation
 enum RecordingSource: String, Codable, Hashable {
     case freestyle
     case importedSong
+    case musicLibrary
+    case recordedSong
+    case linkedSong
 }
 
 struct FreestyleRecording: Codable, Identifiable, Hashable {

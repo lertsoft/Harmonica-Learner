@@ -7,6 +7,7 @@ import SoundpipeAudioKit
 enum AudioEngineServiceError: LocalizedError {
     case noInputNode
     case unableToStartFreestyleRecording
+    case unableToStartSongRecording
     case freestyleAudioFileMissing
     case unableToStartFreestylePlayback
 
@@ -16,6 +17,8 @@ enum AudioEngineServiceError: LocalizedError {
             return "No microphone input is available."
         case .unableToStartFreestyleRecording:
             return "Could not start freestyle recording."
+        case .unableToStartSongRecording:
+            return "Could not start recording the playing song."
         case .freestyleAudioFileMissing:
             return "Recorded audio file is missing."
         case .unableToStartFreestylePlayback:
@@ -29,19 +32,21 @@ final class AudioEngineService: NSObject, ObservableObject {
     @Published private(set) var amplitude: Double = 0
     @Published private(set) var isRunning: Bool = false
     @Published private(set) var isRecordingFreestyle: Bool = false
+    @Published private(set) var isRecordingSong: Bool = false
     @Published private(set) var isPlayingFreestyleAudio: Bool = false
 
     private lazy var engine = AudioEngine()
     private var tracker: PitchTap?
     private let updateInterval: TimeInterval = 0.05
     private var lastUpdateTime: TimeInterval = 0
-    private var sessionConfigured = false
     private var graphConfigured = false
 
     private var freestyleRecorder: AVAudioRecorder?
+    private var songRecorder: AVAudioRecorder?
     private var freestylePlayer: AVAudioPlayer?
 
     private(set) var lastFreestyleRecordingDuration: TimeInterval = 0
+    private(set) var lastSongRecordingDuration: TimeInterval = 0
 
     override init() {
         super.init()
@@ -145,21 +150,63 @@ final class AudioEngineService: NSObject, ObservableObject {
         isRecordingFreestyle = false
     }
 
+    func startSongRecording(to url: URL) throws {
+        try configureAudioSession()
+        stopFreestyleAudio()
+
+        let directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: 44_100,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+        ]
+        let recorder = try AVAudioRecorder(url: url, settings: settings)
+        recorder.prepareToRecord()
+        guard recorder.record() else {
+            throw AudioEngineServiceError.unableToStartSongRecording
+        }
+        songRecorder = recorder
+        lastSongRecordingDuration = 0
+        isRecordingSong = true
+    }
+
+    func stopSongRecording() {
+        guard let recorder = songRecorder else { return }
+        recorder.stop()
+        lastSongRecordingDuration = recorder.currentTime
+        songRecorder = nil
+        isRecordingSong = false
+    }
+
     func playFreestyleAudio(from url: URL) throws {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw AudioEngineServiceError.freestyleAudioFileMissing
         }
 
         stopFreestyleAudio()
+        try AppAudioSession.activate()
 
         let player = try AVAudioPlayer(contentsOf: url)
         player.delegate = self
-
-        guard player.play() else {
+        guard player.prepareToPlay() else {
             throw AudioEngineServiceError.unableToStartFreestylePlayback
         }
 
+        // Retain the player before starting it so its audio queue cannot be released
+        // during the transition out of a system importer or media picker.
         freestylePlayer = player
+
+        guard player.play() else {
+            freestylePlayer = nil
+            throw AudioEngineServiceError.unableToStartFreestylePlayback
+        }
+
         isPlayingFreestyleAudio = true
     }
 
@@ -171,15 +218,11 @@ final class AudioEngineService: NSObject, ObservableObject {
 
     private func configureAudioSession() throws {
         let session = AVAudioSession.sharedInstance()
-        if !sessionConfigured {
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker])
-            _ = try? session.setPreferredInputNumberOfChannels(1)
-            _ = try? session.setPreferredOutputNumberOfChannels(2)
-            _ = try? session.setPreferredSampleRate(48_000)
-            _ = try? session.setPreferredIOBufferDuration(0.01)
-            sessionConfigured = true
-        }
-        try session.setActive(true)
+        try AppAudioSession.activate()
+        _ = try? session.setPreferredInputNumberOfChannels(1)
+        _ = try? session.setPreferredOutputNumberOfChannels(2)
+        _ = try? session.setPreferredSampleRate(48_000)
+        _ = try? session.setPreferredIOBufferDuration(0.01)
     }
 
     private func logAudioFormats(input: Node) {

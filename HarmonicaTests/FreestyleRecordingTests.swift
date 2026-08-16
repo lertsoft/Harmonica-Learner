@@ -35,6 +35,15 @@ final class FreestyleRecordingTests: XCTestCase {
         XCTAssertEqual(decoded.source, .importedSong)
     }
 
+    func testNewSongCaptureSourcesRoundTripThroughJSON() throws {
+        for source in [RecordingSource.musicLibrary, .recordedSong] {
+            let encoded = try JSONEncoder().encode(makeRecording(source: source))
+            let decoded = try JSONDecoder().decode(FreestyleRecording.self, from: encoded)
+
+            XCTAssertEqual(decoded.source, source)
+        }
+    }
+
     func testMakeTitleUsesExpectedPrefixAndIDFragment() {
         let id = UUID(uuidString: "12345678-1234-1234-1234-123456789ABC")!
         let title = FreestyleRecording.makeTitle(for: Date(timeIntervalSince1970: 0), id: id)

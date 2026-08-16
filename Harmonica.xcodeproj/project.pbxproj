@@ -363,7 +363,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Harmonica Learner";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "We need access to the microphone to analyze your harmonica playing.";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Choose songs stored on this device to create harmonica practice guidance.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Use the microphone to analyze harmonica playing or record a song for practice guidance.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -411,7 +412,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Harmonica Learner";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "We need access to the microphone to analyze your harmonica playing.";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Choose unprotected songs stored on this device to create harmonica practice guidance.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Use the microphone to analyze harmonica playing or record a song for practice guidance.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;

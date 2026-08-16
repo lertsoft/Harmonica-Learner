@@ -14,7 +14,13 @@ struct PracticeView: View {
     @State private var showDeleteRecordingConfirm = false
     @State private var showRenamePrompt = false
     @State private var isSongImporterPresented = false
+    @State private var isMusicLibraryPickerPresented = false
+    @State private var isSongRecorderPresented = false
+    @State private var showAddSongOptions = false
+    @State private var showSongLinkPrompt = false
+    @State private var songLinkText = ""
     @State private var renameText = ""
+    @State private var recordedSongTitle = ""
     @State private var showSetupSheet = false
 
     var body: some View {
@@ -85,6 +91,29 @@ struct PracticeView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(.ultraThinMaterial)
         }
+        .sheet(isPresented: $isMusicLibraryPickerPresented) {
+            MusicLibraryPicker { assetURL, title in
+                isMusicLibraryPickerPresented = false
+                viewModel.importSongFromMusicLibrary(assetURL: assetURL, title: title)
+            } onFailure: { message in
+                isMusicLibraryPickerPresented = false
+                micAlertMessage = message
+                showMicAlert = true
+            } onCancel: {
+                isMusicLibraryPickerPresented = false
+            }
+        }
+        .sheet(isPresented: $isSongRecorderPresented, onDismiss: {
+            if viewModel.isRecordingSong {
+                viewModel.cancelSongRecording()
+            }
+        }) {
+            songRecorderSheet
+                .interactiveDismissDisabled(viewModel.isRecordingSong)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
         .alert("Harmonica Learner", isPresented: $showMicAlert) {
             Button("Open Settings") {
                 openAppSettings()
@@ -92,6 +121,45 @@ struct PracticeView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(micAlertMessage)
+        }
+        .alert("Paste Song Link", isPresented: $showSongLinkPrompt) {
+            TextField("Spotify, YouTube, Apple Music, or audio URL", text: $songLinkText)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+            Button("Analyze") {
+                viewModel.importSong(fromLink: songLinkText)
+                songLinkText = ""
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Direct audio links work locally. Streaming-service links require an authorized transcription provider.")
+        }
+        .alert(
+            "Song Link",
+            isPresented: Binding(
+                get: { viewModel.songLinkErrorMessage != nil },
+                set: { if !$0 { viewModel.songLinkErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { viewModel.songLinkErrorMessage = nil }
+        } message: {
+            Text(viewModel.songLinkErrorMessage ?? "")
+        }
+        .confirmationDialog(
+            "Add a Song",
+            isPresented: $showAddSongOptions,
+            titleVisibility: .visible
+        ) {
+            Button("Choose Audio File") { isSongImporterPresented = true }
+            Button("Choose from Music Library") { isMusicLibraryPickerPresented = true }
+            Button("Record a Playing Song") {
+                recordedSongTitle = ""
+                isSongRecorderPresented = true
+            }
+            Button("Paste Song Link") { showSongLinkPrompt = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Use an unprotected local song, record audio through the microphone, or paste a supported link.")
         }
         .alert("Rename Saved Song", isPresented: $showRenamePrompt) {
             TextField("Song name", text: $renameText)
@@ -170,7 +238,7 @@ struct PracticeView: View {
                 selectedSongIsImported: viewModel.selectedRecordingIsImportedSong,
                 onToggleFreestyleMode: handleFreestyleModeToggle,
                 onShowSetup: { showSetupSheet = true },
-                onAddSong: { isSongImporterPresented = true },
+                onAddSong: { showAddSongOptions = true },
                 onRenameSelectedSong: prepareRename,
                 onDeleteSelectedSong: { showDeleteRecordingConfirm = true }
             )
@@ -334,6 +402,49 @@ struct PracticeView: View {
         }
     }
 
+    private var songRecorderSheet: some View {
+        VStack(spacing: 18) {
+            VStack(spacing: 6) {
+                Image(systemName: viewModel.isRecordingSong ? "waveform.circle.fill" : "mic.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(viewModel.isRecordingSong ? AppColors.missGradientStart : AppColors.primaryGradientStart)
+                Text(viewModel.isRecordingSong ? "Recording the song…" : "Record a Playing Song")
+                    .font(AppTypography.title)
+                    .foregroundStyle(AppColors.textPrimary)
+                Text(viewModel.isRecordingSong
+                     ? "Play the song near this device. Stop when you have enough for a useful practice line."
+                     : "The microphone recording stays on this device and will be analyzed into harmonica note guidance.")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            TextField("Song name (optional)", text: $recordedSongTitle)
+                .textFieldStyle(.roundedBorder)
+                .disabled(viewModel.isRecordingSong)
+
+            Text(formattedElapsed(viewModel.songRecordingElapsed))
+                .font(AppTypography.mono.monospacedDigit())
+                .foregroundStyle(AppColors.textPrimary)
+
+            Button {
+                handleSongRecordingToggle()
+            } label: {
+                Label(viewModel.isRecordingSong ? "Stop and Analyze" : "Start Recording",
+                      systemImage: viewModel.isRecordingSong ? "stop.fill" : "record.circle")
+                    .frame(maxWidth: .infinity, minHeight: 46)
+            }
+            .buttonStyle(StudioControlButtonStyle(isProminent: true, tint: viewModel.isRecordingSong ? AppGradients.miss : AppGradients.primary))
+
+            if !viewModel.isRecordingSong {
+                Button("Cancel", role: .cancel) { isSongRecorderPresented = false }
+                    .foregroundStyle(AppColors.textSecondary)
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: 560)
+    }
+
     private func noticeBanner(_ message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "info.circle.fill")
@@ -426,6 +537,9 @@ struct PracticeView: View {
             canPlayFreestyleAudio: viewModel.selectedFreestyleHasAudio,
             isFreestylePlayingAudio: viewModel.isFreestylePlayingAudio,
             isFreestyleSong: viewModel.selectedSongIsFreestyle,
+            isImportedSong: viewModel.selectedRecordingIsImportedSong,
+            canPlaySynthesizedCover: viewModel.selectedSongHasPlayableNotes,
+            isSynthesizedCoverPlaying: viewModel.isSynthesizedCoverPlaying,
             onPrimaryAction: {
                 if viewModel.isFreestyleMode {
                     handleFreestyleRecordingToggle()
@@ -435,7 +549,8 @@ struct PracticeView: View {
             },
             onShowSettings: { showSetupSheet = true },
             onToggleFreestylePlayback: handleFreestylePlaybackToggle,
-            onRemoveFreestyleAudio: handleRemoveFreestyleAudio
+            onRemoveFreestyleAudio: handleRemoveFreestyleAudio,
+            onToggleSynthesizedCover: handleSynthesizedCoverToggle
         )
     }
 
@@ -563,6 +678,33 @@ struct PracticeView: View {
         }
     }
 
+    private func handleSongRecordingToggle() {
+        if viewModel.isRecordingSong {
+            do {
+                try viewModel.stopSongRecordingAndAnalyze()
+                isSongRecorderPresented = false
+            } catch {
+                micAlertMessage = "Could not finish the song recording: \(error.localizedDescription)"
+                showMicAlert = true
+            }
+            return
+        }
+
+        viewModel.audioService.requestPermission { granted in
+            guard granted else {
+                micAlertMessage = "Microphone access is required to record a playing song. Enable it in Settings."
+                showMicAlert = true
+                return
+            }
+            do {
+                try viewModel.startSongRecording(title: recordedSongTitle)
+            } catch {
+                micAlertMessage = "Could not start song recording: \(error.localizedDescription)"
+                showMicAlert = true
+            }
+        }
+    }
+
     private func handleFreestylePlaybackToggle() {
         if viewModel.isFreestylePlayingAudio {
             viewModel.stopSelectedFreestyleAudio()
@@ -587,6 +729,20 @@ struct PracticeView: View {
             try viewModel.playCurrentReferenceNote()
         } catch {
             micAlertMessage = "Could not play the reference note: \(error.localizedDescription)"
+            showMicAlert = true
+        }
+    }
+
+    private func handleSynthesizedCoverToggle() {
+        if viewModel.isSynthesizedCoverPlaying {
+            viewModel.stopSelectedSynthesizedCover()
+            return
+        }
+
+        do {
+            try viewModel.playSelectedSynthesizedCover()
+        } catch {
+            micAlertMessage = "Could not play the harmonica cover: \(error.localizedDescription)"
             showMicAlert = true
         }
     }

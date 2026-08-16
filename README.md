@@ -23,7 +23,11 @@ This is anative iOS app that helps you learn and practice your harmonica skills.
 
 ### ➕ Add Your Own Songs
 - **Audio import** — Use the add button to choose an audio file from Files.
+- **Device Music Library** — Choose downloaded, unprotected music owned by the user. Apple Music subscription downloads and other DRM-protected items are intentionally rejected because iOS does not expose their audio data.
+- **Record a playing song** — Capture audio through the microphone, then analyze the recording locally into suggested harmonica notes. This works well for a song playing from another device or an acoustic performance.
+- **Song-link entry** — Paste Spotify, YouTube, Apple Music, or direct audio links. Direct audio URLs are downloaded and analyzed locally; protected streaming links are routed through an optional licensed transcription endpoint.
 - **Harmonica suggestions** — The app analyzes dominant pitches and turns them into a compact line of playable harmonica notes with hole and blow/draw guidance.
+- **Synthesized cover preview** — Hear the complete suggested line as a newly generated harmonica-like performance; the imported recording is not mixed into the cover.
 - **Full-mix fallback** — If a song has no clear lead pitch, the app supplies a starter harmonica phrase so the song still has useful practice targets.
 - **Optional listening** — Imported audio is preserved for on-demand playback; practicing the suggested line remains silent by default.
 
@@ -98,6 +102,10 @@ Harmonica/
 - **Local persistence** — Freestyle recordings stored as JSON index + M4A audio files in the app's Documents directory.
 - **Stable song identity** — Saved songs use UUID-backed identifiers, so renames and duplicate titles do not break selection or persistence.
 - **Offline song suggestions** — Imported audio is analyzed locally; no account or network upload is required.
+- **Licensed link-provider seam** — Set the `HarmonicaTranscriptionAPIURL` Info property to an HTTPS endpoint that accepts `{ sourceURL, provider, harmonicaKey, layout }` and returns `{ title, bpm, notes }`. The app never attempts to rip protected provider audio.
+- **Spotify analysis worker** — `Backend/spotify-worker.mjs` implements that contract using Spotify's official Audio Analysis endpoint for eligible Spotify developer applications; credentials stay on the worker.
+
+Provider behavior, official policy references, and the backend JSON contract are documented in [Docs/SongLinkTranscription.md](Docs/SongLinkTranscription.md).
 - **Adaptive difficulty** — `AttemptToleranceModel` uses linear interpolation from a forgiving starting tolerance down to a precise target over configurable attempts.
 
 ---

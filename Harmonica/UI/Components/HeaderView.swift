@@ -82,7 +82,7 @@ struct HeaderView: View {
                 }
             }
             Divider()
-            Button(action: onAddSong) { Label("Add Audio Song", systemImage: "plus") }
+            Button(action: onAddSong) { Label("Add Song", systemImage: "plus") }
             if canManageSelectedSong {
                 Button(action: onRenameSelectedSong) { Label("Rename", systemImage: "pencil") }
                 Button(role: .destructive, action: onDeleteSelectedSong) { Label("Delete", systemImage: "trash") }

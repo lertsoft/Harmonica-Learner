@@ -1,4 +1,5 @@
 import Combine
+import AVFoundation
 import Foundation
 import SwiftUI
 
@@ -17,8 +18,12 @@ final class PracticeViewModel: ObservableObject {
     @Published private(set) var isFreestyleRecording: Bool = false
     @Published private(set) var isFreestylePlayingAudio: Bool = false
     @Published private(set) var isReferenceNotePlaying: Bool = false
+    @Published private(set) var isSynthesizedCoverPlaying: Bool = false
     @Published private(set) var freestyleElapsed: TimeInterval = 0
     @Published private(set) var isImportingSong: Bool = false
+    @Published private(set) var isRecordingSong: Bool = false
+    @Published private(set) var songRecordingElapsed: TimeInterval = 0
+    @Published var songLinkErrorMessage: String?
 
     @Published private(set) var bundledSongs: [HarmonicaSong] = []
     @Published private(set) var freestyleRecordings: [FreestyleRecording] = []
@@ -49,6 +54,11 @@ final class PracticeViewModel: ObservableObject {
     private var freestylePendingAudioFileName: String?
     private var freestyleCaptureLayout: HarmonicaLayout?
     private var freestyleCaptureKey: String?
+    private var songRecordingTimer: AnyCancellable?
+    private var songRecordingStartDate: Date?
+    private var songRecordingID: UUID?
+    private var songRecordingAudioFileName: String?
+    private var songRecordingTitle: String?
 
     init(
         recordingStore: FreestyleRecordingStore = FreestyleRecordingStore(),
@@ -71,6 +81,7 @@ final class PracticeViewModel: ObservableObject {
 
     deinit {
         freestyleTimer?.cancel()
+        songRecordingTimer?.cancel()
         freestyleTimer = nil
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
@@ -108,8 +119,14 @@ final class PracticeViewModel: ObservableObject {
         return !recording.notes.isEmpty
     }
 
+    var selectedSongHasPlayableNotes: Bool {
+        !currentSongNotes.isEmpty
+    }
+
     var selectedRecordingIsImportedSong: Bool {
-        selectedRecording?.source == .importedSong
+        guard let source = selectedRecording?.source else { return false }
+        return source == .importedSong || source == .musicLibrary
+            || source == .recordedSong || source == .linkedSong
     }
 
     var currentTargetEvent: HarmonicaNoteEvent? {
@@ -345,6 +362,18 @@ final class PracticeViewModel: ObservableObject {
         notePlaybackService.stop()
     }
 
+    func playSelectedSynthesizedCover() throws {
+        guard let selectedSong else { return }
+        if isFreestylePlayingAudio {
+            stopSelectedFreestyleAudio()
+        }
+        try notePlaybackService.play(events: selectedSong.notes)
+    }
+
+    func stopSelectedSynthesizedCover() {
+        notePlaybackService.stop()
+    }
+
     func renameSelectedRecording(to title: String) throws {
         guard let recording = selectedRecording else { return }
         guard let renamed = try recordingStore.rename(id: recording.id, to: title) else {
@@ -369,7 +398,11 @@ final class PracticeViewModel: ObservableObject {
         scheduleNotice("“\(recording.title)” was deleted.")
     }
 
-    func importSong(from sourceURL: URL) {
+    func importSong(
+        from sourceURL: URL,
+        titleOverride: String? = nil,
+        source: RecordingSource = .importedSong
+    ) {
         guard !isImportingSong else { return }
         let didAccess = sourceURL.startAccessingSecurityScopedResource()
         defer {
@@ -398,7 +431,8 @@ final class PracticeViewModel: ObservableObject {
         }
 
         isImportingSong = true
-        let title = sourceURL.deletingPathExtension().lastPathComponent
+        let title = titleOverride?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? sourceURL.deletingPathExtension().lastPathComponent
         let layout = selectedLayout
         let key = selectedKey
 
@@ -416,7 +450,7 @@ final class PracticeViewModel: ObservableObject {
                         audioFileName: audioFileName,
                         notes: analysis.notes,
                         duration: analysis.duration,
-                        source: .importedSong
+                        source: source
                     )
 
                     do {
@@ -444,6 +478,200 @@ final class PracticeViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    func importSongFromMusicLibrary(assetURL: URL, title: String) {
+        guard !isImportingSong else { return }
+        isImportingSong = true
+
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("harmonica-library-\(UUID().uuidString).m4a")
+        let asset = AVURLAsset(url: assetURL)
+        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
+            isImportingSong = false
+            scheduleNotice("That library song cannot be exported. It may be protected or stored only in the cloud.")
+            return
+        }
+        exporter.outputURL = temporaryURL
+        exporter.outputFileType = .m4a
+
+        exporter.exportAsynchronously { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isImportingSong = false
+                guard exporter.status == .completed else {
+                    try? FileManager.default.removeItem(at: temporaryURL)
+                    self.scheduleNotice("That song could not be opened. Download an unprotected copy to the device or choose it from Files.")
+                    return
+                }
+                self.importSong(from: temporaryURL, titleOverride: title, source: .musicLibrary)
+                try? FileManager.default.removeItem(at: temporaryURL)
+            }
+        }
+    }
+
+    func startSongRecording(title: String) throws {
+        guard !isRecordingSong, !isImportingSong else { return }
+        let id = UUID()
+        let fileName = "\(id.uuidString).m4a"
+        let url = recordingStore.audioURL(forFileName: fileName)
+        try audioService.startSongRecording(to: url)
+
+        songRecordingID = id
+        songRecordingAudioFileName = fileName
+        songRecordingTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        songRecordingStartDate = Date()
+        songRecordingElapsed = 0
+        isRecordingSong = true
+        songRecordingTimer?.cancel()
+        songRecordingTimer = Timer.publish(every: 0.1, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] now in
+                guard let self, let start = self.songRecordingStartDate else { return }
+                self.songRecordingElapsed = now.timeIntervalSince(start)
+            }
+    }
+
+    func stopSongRecordingAndAnalyze() throws {
+        guard isRecordingSong,
+              let id = songRecordingID,
+              let fileName = songRecordingAudioFileName else { return }
+        audioService.stopSongRecording()
+        isRecordingSong = false
+        songRecordingTimer?.cancel()
+        songRecordingTimer = nil
+        songRecordingElapsed = audioService.lastSongRecordingDuration
+
+        let url = recordingStore.audioURL(forFileName: fileName)
+        guard audioService.lastSongRecordingDuration >= 1 else {
+            try? FileManager.default.removeItem(at: url)
+            resetSongRecordingState()
+            scheduleNotice("Recording too short to analyze.")
+            return
+        }
+
+        let fallbackTitle = "Recorded Song • \(DateFormatter.localizedString(from: songRecordingStartDate ?? Date(), dateStyle: .medium, timeStyle: .short))"
+        let title = songRecordingTitle ?? fallbackTitle
+        let layout = selectedLayout
+        let key = selectedKey
+        isImportingSong = true
+        resetSongRecordingState(keepElapsed: true)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let analysis = try ImportedSongAnalyzer().analyze(url: url, layout: layout)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    let recording = FreestyleRecording(
+                        id: id,
+                        title: title,
+                        createdAt: Date(),
+                        key: key,
+                        layoutRawValue: layout.rawValue,
+                        audioFileName: fileName,
+                        notes: analysis.notes,
+                        duration: analysis.duration,
+                        source: .recordedSong
+                    )
+                    do {
+                        try self.recordingStore.save(recording)
+                        self.freestyleRecordings = self.recordingStore.loadAll()
+                        self.rebuildMergedSongs(keepCurrentSelection: false)
+                        self.selectedSong = self.songs.first(where: { $0.id == recording.asSong.id })
+                        self.isFreestyleMode = false
+                        let detail = analysis.usedFallback
+                            ? "The recording had no clear lead pitch, so a starter phrase was added."
+                            : "Recorded song added with \(analysis.notes.count) suggested harmonica notes."
+                        self.scheduleNotice(detail)
+                    } catch {
+                        try? FileManager.default.removeItem(at: url)
+                        self.scheduleNotice("Could not save the recorded song: \(error.localizedDescription)")
+                    }
+                    self.isImportingSong = false
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: url)
+                DispatchQueue.main.async {
+                    self?.isImportingSong = false
+                    self?.scheduleNotice("Could not analyze the recording: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func cancelSongRecording() {
+        guard isRecordingSong else { return }
+        audioService.stopSongRecording()
+        if let fileName = songRecordingAudioFileName {
+            try? FileManager.default.removeItem(at: recordingStore.audioURL(forFileName: fileName))
+        }
+        isRecordingSong = false
+        songRecordingTimer?.cancel()
+        songRecordingTimer = nil
+        resetSongRecordingState()
+    }
+
+    func importSong(fromLink linkText: String) {
+        guard !isImportingSong else { return }
+
+        let descriptor: SongLinkDescriptor
+        do {
+            descriptor = try SongLinkDescriptor.parse(linkText)
+        } catch {
+            songLinkErrorMessage = error.localizedDescription
+            return
+        }
+
+        isImportingSong = true
+        let layout = selectedLayout
+        let key = selectedKey
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await SongLinkImportService().resolve(
+                    descriptor,
+                    layout: layout,
+                    key: key
+                )
+                switch result {
+                case .downloadedAudio(let temporaryURL):
+                    self.isImportingSong = false
+                    self.importSong(from: temporaryURL)
+                    try? FileManager.default.removeItem(at: temporaryURL)
+
+                case .transcription(let transcription):
+                    try self.saveLinkedTranscription(transcription, layout: layout)
+                    self.isImportingSong = false
+                }
+            } catch {
+                self.isImportingSong = false
+                self.songLinkErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func saveLinkedTranscription(
+        _ transcription: LinkedSongTranscription,
+        layout: HarmonicaLayout
+    ) throws {
+        let recording = FreestyleRecording(
+            id: UUID(),
+            title: transcription.title,
+            createdAt: Date(),
+            key: transcription.key,
+            layoutRawValue: layout.rawValue,
+            audioFileName: nil,
+            notes: transcription.notes,
+            duration: transcription.notes.reduce(0) { $0 + $1.duration },
+            source: .linkedSong
+        )
+        try recordingStore.save(recording)
+        freestyleRecordings = recordingStore.loadAll()
+        rebuildMergedSongs(keepCurrentSelection: false)
+        selectedSong = songs.first(where: { $0.id == recording.asSong.id })
+        isFreestyleMode = false
+        scheduleNotice("Linked song added with \(recording.notes.count) harmonica notes.")
     }
 
     func removeSelectedFreestyleAudio() throws {
@@ -580,6 +808,14 @@ final class PracticeViewModel: ObservableObject {
         freestyleStartDate = nil
     }
 
+    private func resetSongRecordingState(keepElapsed: Bool = false) {
+        songRecordingID = nil
+        songRecordingAudioFileName = nil
+        songRecordingTitle = nil
+        songRecordingStartDate = nil
+        if !keepElapsed { songRecordingElapsed = 0 }
+    }
+
     private func scheduleNotice(_ message: String) {
         noticeMessage = message
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -612,5 +848,15 @@ final class PracticeViewModel: ObservableObject {
                 self?.isReferenceNotePlaying = value
             }
             .store(in: &cancellables)
+
+        notePlaybackService.$isPlayingSequence
+            .sink { [weak self] value in
+                self?.isSynthesizedCoverPlaying = value
+            }
+            .store(in: &cancellables)
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
