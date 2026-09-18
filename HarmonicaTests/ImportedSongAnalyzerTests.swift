@@ -73,4 +73,53 @@ final class ImportedSongAnalyzerTests: XCTestCase {
         XCTAssertTrue(analysis.notes.allSatisfy { $0.note == "C5" })
         XCTAssertEqual(analysis.duration, duration, accuracy: 0.02)
     }
+
+    func testAnalyzeReportsProgress() throws {
+        let url = try makeToneFile(duration: 0.25)
+        defer { try? FileManager.default.removeItem(at: url) }
+        var progressValues: [Double] = []
+
+        _ = try ImportedSongAnalyzer().analyze(
+            url: url,
+            layout: .diatonicC,
+            progress: { progressValues.append($0) }
+        )
+
+        XCTAssertEqual(progressValues.first, 0)
+        XCTAssertEqual(progressValues.last, 1)
+    }
+
+    func testAnalyzeCanBeCancelled() throws {
+        let url = try makeToneFile(duration: 0.25)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertThrowsError(
+            try ImportedSongAnalyzer().analyze(
+                url: url,
+                layout: .diatonicC,
+                shouldCancel: { true }
+            )
+        ) { error in
+            XCTAssertEqual(error as? ImportedSongAnalyzerError, .cancelled)
+        }
+    }
+
+    private func makeToneFile(duration: TimeInterval) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("harmonica-analyzer-\(UUID().uuidString).caf")
+        let sampleRate = 44_100.0
+        let frameCount = AVAudioFrameCount(sampleRate * duration)
+        let format = try XCTUnwrap(
+            AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)
+        )
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
+        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+        buffer.frameLength = frameCount
+        for frame in 0..<Int(frameCount) {
+            samples[frame] = Float(sin(2 * .pi * 523.251 * Double(frame) / sampleRate) * 0.4)
+        }
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        try file.write(from: buffer)
+        return url
+    }
 }

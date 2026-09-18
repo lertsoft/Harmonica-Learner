@@ -99,6 +99,15 @@ struct AppTypography {
     static let mono: Font = .custom("Menlo-Bold", size: 14, relativeTo: .body)
 }
 
+struct AppMetrics {
+    static let cardRadius: CGFloat = 20
+    static let compactCardRadius: CGFloat = 16
+    static let controlRadius: CGFloat = 14
+    static let controlHeight: CGFloat = 44
+    static let pagePadding: CGFloat = 16
+    static let compactPagePadding: CGFloat = 10
+}
+
 struct BackgroundGradientView: View {
     var body: some View {
         if #available(iOS 18.0, *) {
@@ -129,6 +138,7 @@ struct BackgroundGradientView: View {
 }
 
 struct LiquidGlassModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var cornerRadius: CGFloat = 20
     var intensity: Double = 0.08
 
@@ -137,7 +147,9 @@ struct LiquidGlassModifier: ViewModifier {
             .background(
                 ZStack {
                     RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(.ultraThinMaterial)
+                        .fill(reduceTransparency
+                              ? AnyShapeStyle(AppColors.backgroundMid)
+                              : AnyShapeStyle(.ultraThinMaterial))
 
                     RoundedRectangle(cornerRadius: cornerRadius)
                         .fill(Color.white.opacity(intensity * 0.7))
@@ -168,7 +180,7 @@ struct LiquidGlassModifier: ViewModifier {
                         lineWidth: 1
                     )
             )
-            .shadow(color: .black.opacity(0.16), radius: 14, x: 0, y: 6)
+            .shadow(color: .black.opacity(reduceTransparency ? 0 : 0.16), radius: reduceTransparency ? 0 : 14, x: 0, y: 6)
     }
 }
 

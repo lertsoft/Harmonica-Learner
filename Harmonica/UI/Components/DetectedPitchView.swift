@@ -1,12 +1,37 @@
 import SwiftUI
 
 struct DetectedPitchView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let pitch: NotePitch?
     let matchState: NoteMatchState
+    var showsSurface: Bool = true
 
     @State private var animatedCents: CGFloat = 0
 
     var body: some View {
+        Group {
+            if showsSurface {
+                content
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .liquidGlass(cornerRadius: AppMetrics.compactCardRadius, intensity: 0.03)
+            } else {
+                content
+            }
+        }
+        .onAppear {
+            animatedCents = CGFloat(pitch?.centsOffset ?? 0)
+        }
+        .onChange(of: pitch?.centsOffset) { _, newValue in
+            withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) {
+                animatedCents = CGFloat(newValue ?? 0)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -40,17 +65,6 @@ struct DetectedPitchView: View {
 
             meter
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .liquidGlass(cornerRadius: 16, intensity: 0.03)
-        .onAppear {
-            animatedCents = CGFloat(pitch?.centsOffset ?? 0)
-        }
-        .onChange(of: pitch?.centsOffset) { _, newValue in
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                animatedCents = CGFloat(newValue ?? 0)
-            }
-        }
     }
 
     private var meter: some View {
@@ -68,7 +82,7 @@ struct DetectedPitchView: View {
                     .fill(centsColor)
                     .frame(width: 14, height: 14)
                     .offset(x: indicatorOffset(width: width), y: -2)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: animatedCents)
+                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: animatedCents)
             }
         }
         .frame(height: 10)
@@ -107,6 +121,11 @@ struct DetectedPitchView: View {
         case .miss: return AppColors.missGradientStart
         case .idle: return AppColors.textPrimary
         }
+    }
+
+    private var accessibilitySummary: String {
+        guard let pitch else { return "No pitch detected" }
+        return "Detected \(pitch.fullName), \(centsString), \(tuningLabel)"
     }
 }
 

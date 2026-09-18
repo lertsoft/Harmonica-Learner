@@ -5,6 +5,9 @@ struct PracticeView: View {
     @StateObject private var viewModel = PracticeViewModel()
     @AppStorage("hasSeenPracticeOnboarding") private var hasSeenOnboarding = false
     @AppStorage("callAndResponseEnabled") private var callAndResponseEnabled = false
+    @AppStorage("practice.sensitivity") private var storedSensitivity = 0.035
+    @AppStorage("practice.layout") private var storedLayout = HarmonicaLayout.diatonicC.rawValue
+    @AppStorage("practice.selectedSongID") private var storedSelectedSongID = ""
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var showOnboarding = false
@@ -22,6 +25,8 @@ struct PracticeView: View {
     @State private var renameText = ""
     @State private var recordedSongTitle = ""
     @State private var showSetupSheet = false
+    @State private var lastMissHapticDate = Date.distantPast
+    @State private var hasRestoredPreferences = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -31,9 +36,9 @@ struct PracticeView: View {
             )
 
             ZStack {
-                ZStack {
-                    backgroundLayer
+                backgroundLayer
 
+                VStack(spacing: 0) {
                     ScrollView {
                         practiceContent(layout: layout)
                             .frame(maxWidth: layout.contentMaxWidth)
@@ -44,11 +49,11 @@ struct PracticeView: View {
                     }
                     .scrollIndicators(.hidden)
                     .allowsHitTesting(!showOnboarding && !viewModel.isImportingSong)
-                }
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    controlsPanel(safeAreaBottom: 8)
+
+                    controlsPanel(safeAreaBottom: 8, usesCompactLayout: layout.isCompactHeight)
                         .disabled(showOnboarding || viewModel.isImportingSong)
                 }
+                .accessibilityHidden(showOnboarding || viewModel.isImportingSong)
 
                 if showOnboarding {
                     onboardingOverlay
@@ -60,10 +65,8 @@ struct PracticeView: View {
             }
         }
         .onAppear {
+            restorePreferencesIfNeeded()
             showOnboarding = !hasSeenOnboarding
-        }
-        .onReceive(viewModel.audioService.$frequency) { frequency in
-            viewModel.handleFrequency(frequency, amplitude: viewModel.audioService.amplitude)
         }
         .onChange(of: viewModel.matchState) { oldValue, newValue in
             if newValue == .hit && oldValue != .hit {
@@ -74,20 +77,31 @@ struct PracticeView: View {
         }
         .onChange(of: viewModel.selectedSong) { oldValue, newValue in
             viewModel.handleSelectedSongChange(from: oldValue, to: newValue)
+            storedSelectedSongID = newValue?.id ?? ""
+        }
+        .onChange(of: viewModel.sensitivity) { _, newValue in
+            storedSensitivity = newValue
+        }
+        .onChange(of: viewModel.selectedLayout) { _, newValue in
+            storedLayout = newValue.rawValue
         }
         .onChange(of: viewModel.currentNoteIndex) { _, _ in
             playCallAndResponseReferenceIfNeeded()
         }
         .sheet(isPresented: $showSetupSheet) {
             PracticeSetupSheet(
-                selectedKey: $viewModel.selectedKey,
                 selectedLayout: $viewModel.selectedLayout,
                 sensitivity: $viewModel.sensitivity,
                 callAndResponseEnabled: $callAndResponseEnabled,
-                liveAmplitude: viewModel.audioService.amplitude,
-                onAutoCalibrate: autoCalibrateSensitivity
+                audioService: viewModel.audioService,
+                isCalibrating: viewModel.isCalibratingSensitivity,
+                onAutoCalibrate: autoCalibrateSensitivity,
+                onShowQuickStart: {
+                    showSetupSheet = false
+                    DispatchQueue.main.async { showOnboarding = true }
+                }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
             .presentationBackground(.ultraThinMaterial)
         }
@@ -102,6 +116,19 @@ struct PracticeView: View {
             } onCancel: {
                 isMusicLibraryPickerPresented = false
             }
+        }
+        .sheet(isPresented: $showAddSongOptions) {
+            AddPracticeSongSheet(
+                onChooseFile: { presentAfterAddSheet { isSongImporterPresented = true } },
+                onChooseMusic: { presentAfterAddSheet { isMusicLibraryPickerPresented = true } },
+                onRecordSong: {
+                    recordedSongTitle = ""
+                    presentAfterAddSheet { isSongRecorderPresented = true }
+                },
+                onPasteLink: { presentAfterAddSheet { showSongLinkPrompt = true } }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $isSongRecorderPresented, onDismiss: {
             if viewModel.isRecordingSong {
@@ -144,22 +171,6 @@ struct PracticeView: View {
             Button("OK", role: .cancel) { viewModel.songLinkErrorMessage = nil }
         } message: {
             Text(viewModel.songLinkErrorMessage ?? "")
-        }
-        .confirmationDialog(
-            "Add a Song",
-            isPresented: $showAddSongOptions,
-            titleVisibility: .visible
-        ) {
-            Button("Choose Audio File") { isSongImporterPresented = true }
-            Button("Choose from Music Library") { isMusicLibraryPickerPresented = true }
-            Button("Record a Playing Song") {
-                recordedSongTitle = ""
-                isSongRecorderPresented = true
-            }
-            Button("Paste Song Link") { showSongLinkPrompt = true }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Use an unprotected local song, record audio through the microphone, or paste a supported link.")
         }
         .alert("Rename Saved Song", isPresented: $showRenamePrompt) {
             TextField("Song name", text: $renameText)
@@ -229,21 +240,18 @@ struct PracticeView: View {
     private func practiceContent(layout: AdaptivePracticeLayout) -> some View {
         VStack(spacing: layout.contentSpacing) {
             HeaderView(
-                selectedSong: $viewModel.selectedSong,
+                selectedSong: viewModel.selectedSong,
                 songs: viewModel.songs,
-                selectedKey: viewModel.selectedKey,
-                selectedLayout: viewModel.selectedLayout,
                 isFreestyleMode: viewModel.isFreestyleMode,
-                canManageSelectedSong: viewModel.selectedSongIsFreestyle,
                 selectedSongIsImported: viewModel.selectedRecordingIsImportedSong,
+                usesCompactLayout: layout.usesCompactHeader,
                 onToggleFreestyleMode: handleFreestyleModeToggle,
+                onSelectSong: { _ = selectSongForPractice($0) },
                 onShowSetup: { showSetupSheet = true },
                 onAddSong: { showAddSongOptions = true },
-                onRenameSelectedSong: prepareRename,
-                onDeleteSelectedSong: { showDeleteRecordingConfirm = true }
+                onRenameSong: prepareRename,
+                onDeleteSong: prepareDelete
             )
-
-            statusLine
 
             if let notice = viewModel.noticeMessage {
                 noticeBanner(notice)
@@ -261,14 +269,14 @@ struct PracticeView: View {
     private func guidedContent(layout: AdaptivePracticeLayout) -> some View {
         if layout.usesTwoColumnPractice {
             HStack(alignment: .top, spacing: layout.contentSpacing) {
-                targetNoteContent
+                targetNoteContent(usesCompactLayout: layout.isCompactHeight)
                     .frame(maxWidth: .infinity, alignment: .top)
 
                 pitchAndProgressContent
                     .frame(maxWidth: .infinity, alignment: .top)
             }
         } else {
-            targetNoteContent
+            targetNoteContent(usesCompactLayout: layout.isCompactHeight)
             pitchAndProgressContent
         }
     }
@@ -276,27 +284,24 @@ struct PracticeView: View {
     @ViewBuilder
     private func freestyleContent(layout: AdaptivePracticeLayout) -> some View {
         if layout.usesTwoColumnPractice {
-            HStack(alignment: .top, spacing: layout.contentSpacing) {
-                freestyleLiveCard
-                    .frame(maxWidth: .infinity)
-                detectedPitchContent
-                    .frame(maxWidth: .infinity)
-            }
+            freestyleLiveCard
+                .frame(maxWidth: 760)
         } else {
             freestyleLiveCard
-            detectedPitchContent
         }
     }
 
-    private var targetNoteContent: some View {
+    private func targetNoteContent(usesCompactLayout: Bool) -> some View {
         TargetNoteView(
             targetNote: viewModel.currentTargetNote,
             targetHole: viewModel.currentTargetHole,
             detectedPitch: viewModel.detectedPitch,
             matchState: viewModel.matchState,
-            isAudioRunning: viewModel.audioService.isRunning,
+            isAudioRunning: viewModel.isAudioRunning,
             isReferenceNotePlaying: viewModel.isReferenceNotePlaying,
             canProgress: viewModel.selectedFreestyleHasPlayableNotes,
+            isComplete: viewModel.isPracticeComplete,
+            usesCompactLayout: usesCompactLayout,
             onRestart: viewModel.startNewAttempt,
             onSkip: viewModel.advanceNote,
             onToggleReferenceNote: handleReferenceNoteToggle
@@ -312,42 +317,8 @@ struct PracticeView: View {
         )
     }
 
-    private var detectedPitchContent: some View {
-        DetectedPitchView(
-            pitch: viewModel.detectedPitch,
-            matchState: viewModel.matchState
-        )
-    }
-
-    private var statusLine: some View {
-        HStack {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(unifiedStatusColor)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: unifiedStatusColor.opacity(0.7), radius: viewModel.audioService.isRunning ? 5 : 0)
-                Text(unifiedStatusText)
-                    .font(AppTypography.caption.weight(.semibold))
-                    .foregroundStyle(unifiedStatusColor)
-            }
-
-            Spacer()
-
-            if viewModel.isFreestyleMode {
-                Text(viewModel.isFreestyleRecording ? "Recording" : "Freestyle")
-                    .font(AppTypography.caption.weight(.semibold))
-                    .foregroundStyle(viewModel.isFreestyleRecording ? AppColors.missGradientStart : AppColors.primaryGradientStart)
-            } else {
-                Text(callAndResponseEnabled ? "Call & Response" : "Auto-advance • 0.3s hold")
-                    .font(AppTypography.caption.weight(.semibold))
-                    .foregroundStyle(AppColors.textTertiary)
-            }
-        }
-        .padding(.horizontal, 10)
-    }
-
     private var freestyleLiveCard: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 14) {
             HStack {
                 HStack(spacing: 6) {
                     Circle()
@@ -365,17 +336,23 @@ struct PracticeView: View {
                     .foregroundStyle(AppColors.textSecondary)
             }
 
-            Text(viewModel.detectedPitch?.fullName ?? "--")
-                .font(AppTypography.hero)
-                .foregroundStyle(AppColors.textPrimary)
+            DetectedPitchView(
+                pitch: viewModel.detectedPitch,
+                matchState: viewModel.matchState,
+                showsSurface: false
+            )
 
-            Text("Play freely. Your notes and audio will be saved.")
+            Text(viewModel.isFreestyleRecording
+                 ? "Keep playing. Notes and audio are being saved on this device."
+                 : "Start recording when you’re ready to capture notes and audio.")
                 .font(AppTypography.caption)
                 .foregroundStyle(AppColors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
         .liquidGlass(cornerRadius: 18, intensity: 0.03)
+        .accessibilityElement(children: .contain)
     }
 
     private var importingOverlay: some View {
@@ -384,9 +361,18 @@ struct PracticeView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 12) {
-                ProgressView()
-                    .tint(AppColors.primaryGradientStart)
-                    .scaleEffect(1.15)
+                if let progress = viewModel.importProgress {
+                    ProgressView(value: progress)
+                        .tint(AppColors.primaryGradientStart)
+                        .frame(maxWidth: 260)
+                    Text("\(Int((progress * 100).rounded()))%")
+                        .font(AppTypography.mono.monospacedDigit())
+                        .foregroundStyle(AppColors.textSecondary)
+                } else {
+                    ProgressView()
+                        .tint(AppColors.primaryGradientStart)
+                        .scaleEffect(1.15)
+                }
                 Text("Finding a playable harmonica line…")
                     .font(AppTypography.bodyStrong)
                     .foregroundStyle(AppColors.textPrimary)
@@ -394,6 +380,12 @@ struct PracticeView: View {
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.textSecondary)
                     .multilineTextAlignment(.center)
+                if viewModel.canCancelSongImport {
+                    Button("Cancel Analysis", role: .cancel) {
+                        viewModel.cancelSongImport()
+                    }
+                    .buttonStyle(StudioControlButtonStyle())
+                }
             }
             .padding(20)
             .liquidGlass(cornerRadius: 18, intensity: 0.04)
@@ -453,7 +445,7 @@ struct PracticeView: View {
             Text(message)
                 .font(AppTypography.caption)
                 .foregroundStyle(AppColors.textSecondary)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
@@ -462,6 +454,8 @@ struct PracticeView: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color.white.opacity(0.07))
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Notice: \(message)")
     }
 
     private var onboardingOverlay: some View {
@@ -498,6 +492,8 @@ struct PracticeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 onboardingRow(icon: "arrow.up", text: "Blow: push air out through the harmonica")
                 onboardingRow(icon: "arrow.down", text: "Draw: pull air in through the harmonica")
+                onboardingRow(icon: "books.vertical.fill", text: "Library: choose built-in songs or add your own audio")
+                onboardingRow(icon: "waveform.badge.mic", text: "Freestyle: capture a performance and practice it later")
             }
 
             Button {
@@ -512,7 +508,7 @@ struct PracticeView: View {
                 hasSeenOnboarding = true
                 showOnboarding = false
             } label: {
-                Text("Continue")
+                Text("Explore Without Microphone")
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(StudioControlButtonStyle())
@@ -521,17 +517,17 @@ struct PracticeView: View {
         .liquidGlass(cornerRadius: 20, intensity: 0.04)
     }
 
-    private func controlsPanel(safeAreaBottom: CGFloat) -> some View {
-        controlsContent
+    private func controlsPanel(safeAreaBottom: CGFloat, usesCompactLayout: Bool) -> some View {
+        controlsContent(usesCompactLayout: usesCompactLayout)
         .frame(maxWidth: 760)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
         .padding(.bottom, safeAreaBottom)
     }
 
-    private var controlsContent: some View {
+    private func controlsContent(usesCompactLayout: Bool) -> some View {
         ControlsView(
-            isAudioRunning: viewModel.audioService.isRunning,
+            isAudioRunning: viewModel.isAudioRunning,
             isFreestyleMode: viewModel.isFreestyleMode,
             isFreestyleRecording: viewModel.isFreestyleRecording,
             canPlayFreestyleAudio: viewModel.selectedFreestyleHasAudio,
@@ -540,6 +536,7 @@ struct PracticeView: View {
             isImportedSong: viewModel.selectedRecordingIsImportedSong,
             canPlaySynthesizedCover: viewModel.selectedSongHasPlayableNotes,
             isSynthesizedCoverPlaying: viewModel.isSynthesizedCoverPlaying,
+            usesCompactLayout: usesCompactLayout,
             onPrimaryAction: {
                 if viewModel.isFreestyleMode {
                     handleFreestyleRecordingToggle()
@@ -547,7 +544,6 @@ struct PracticeView: View {
                     handleControlsStartStop()
                 }
             },
-            onShowSettings: { showSetupSheet = true },
             onToggleFreestylePlayback: handleFreestylePlaybackToggle,
             onRemoveFreestyleAudio: handleRemoveFreestyleAudio,
             onToggleSynthesizedCover: handleSynthesizedCoverToggle
@@ -576,22 +572,6 @@ struct PracticeView: View {
         .ignoresSafeArea()
     }
 
-    private var stageText: String {
-        switch viewModel.matchState {
-        case .hit: return "On Target"
-        case .miss: return "Adjust Pitch"
-        case .idle: return "Ready"
-        }
-    }
-
-    private var stageColor: Color {
-        switch viewModel.matchState {
-        case .hit: return AppColors.hitGradientStart
-        case .miss: return AppColors.missGradientStart
-        case .idle: return AppColors.textSecondary
-        }
-    }
-
     private func requestMicPermissionFromOnboarding() {
         viewModel.audioService.requestPermission { granted in
             guard granted else {
@@ -613,7 +593,7 @@ struct PracticeView: View {
     }
 
     private func handleAudioToggle(autoHideOnStart: Bool = false) {
-        if viewModel.audioService.isRunning {
+        if viewModel.isAudioRunning {
             viewModel.audioService.stop()
             return
         }
@@ -747,10 +727,28 @@ struct PracticeView: View {
         }
     }
 
-    private func prepareRename() {
+    @discardableResult
+    private func selectSongForPractice(_ song: HarmonicaSong) -> Bool {
+        do {
+            try viewModel.selectSongForGuidedPractice(song)
+            return true
+        } catch {
+            micAlertMessage = "Could not finish the freestyle recording: \(error.localizedDescription)"
+            showMicAlert = true
+            return false
+        }
+    }
+
+    private func prepareRename(_ song: HarmonicaSong) {
+        guard selectSongForPractice(song) else { return }
         guard let recording = viewModel.selectedRecording else { return }
         renameText = recording.title
         showRenamePrompt = true
+    }
+
+    private func prepareDelete(_ song: HarmonicaSong) {
+        guard selectSongForPractice(song) else { return }
+        showDeleteRecordingConfirm = true
     }
 
     private func handleRemoveFreestyleAudio() {
@@ -759,7 +757,7 @@ struct PracticeView: View {
     }
 
     private func ensureAudioReady(onReady: @escaping () -> Void) {
-        if viewModel.audioService.isRunning {
+        if viewModel.isAudioRunning {
             onReady()
             return
         }
@@ -781,33 +779,18 @@ struct PracticeView: View {
         }
     }
 
-    private var unifiedStatusText: String {
-        guard viewModel.audioService.isRunning else { return "Mic Off • Ready to start" }
-        switch viewModel.matchState {
-        case .hit: return "Detected • In Tune"
-        case .miss: return "Listening • Adjust pitch"
-        case .idle: return "Listening"
-        }
-    }
-
-    private var unifiedStatusColor: Color {
-        guard viewModel.audioService.isRunning else { return AppColors.textSecondary }
-        switch viewModel.matchState {
-        case .hit: return AppColors.hitGradientStart
-        case .miss: return AppColors.idleGradientStart
-        case .idle: return AppColors.primaryGradientStart
-        }
-    }
-
     private func autoCalibrateSensitivity() {
-        let measuredNoise = max(0.005, viewModel.audioService.amplitude)
-        viewModel.sensitivity = min(0.2, max(0.012, measuredNoise * 1.8))
+        ensureAudioReady {
+            viewModel.startSensitivityCalibration()
+        }
     }
 
     private func playCallAndResponseReferenceIfNeeded() {
-        guard callAndResponseEnabled, viewModel.audioService.isRunning, !viewModel.isFreestyleMode else { return }
+        guard callAndResponseEnabled, viewModel.isAudioRunning,
+              !viewModel.isFreestyleMode, !viewModel.isPracticeComplete else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            guard callAndResponseEnabled, viewModel.audioService.isRunning else { return }
+            guard callAndResponseEnabled, viewModel.isAudioRunning,
+                  !viewModel.isPracticeComplete else { return }
             try? viewModel.playCurrentReferenceNote()
         }
     }
@@ -817,6 +800,24 @@ struct PracticeView: View {
         let minutes = seconds / 60
         let remainder = seconds % 60
         return String(format: "%02d:%02d", minutes, remainder)
+    }
+
+    private func restorePreferencesIfNeeded() {
+        guard !hasRestoredPreferences else { return }
+        hasRestoredPreferences = true
+
+        viewModel.sensitivity = min(0.2, max(0.005, storedSensitivity))
+        if let layout = HarmonicaLayout(rawValue: storedLayout) {
+            viewModel.selectedLayout = layout
+        }
+        if let savedSong = viewModel.songs.first(where: { $0.id == storedSelectedSongID }) {
+            viewModel.selectedSong = savedSong
+        }
+    }
+
+    private func presentAfterAddSheet(_ presentation: @escaping () -> Void) {
+        showAddSongOptions = false
+        DispatchQueue.main.async(execute: presentation)
     }
 
     private func openAppSettings() {
@@ -833,6 +834,8 @@ struct PracticeView: View {
                 generator.impactOccurred()
             }
         case .miss:
+            guard Date().timeIntervalSince(lastMissHapticDate) >= 1.2 else { return }
+            lastMissHapticDate = Date()
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
         case .idle:
@@ -841,26 +844,94 @@ struct PracticeView: View {
     }
 }
 
+private struct AddPracticeSongSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onChooseFile: () -> Void
+    let onChooseMusic: () -> Void
+    let onRecordSong: () -> Void
+    let onPasteLink: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                sourceRow(
+                    title: "Audio File",
+                    detail: "Analyze an unprotected audio file from Files.",
+                    icon: "doc.badge.plus",
+                    action: onChooseFile
+                )
+                sourceRow(
+                    title: "Music Library",
+                    detail: "Choose downloaded, unprotected music owned by you.",
+                    icon: "music.note.list",
+                    action: onChooseMusic
+                )
+                sourceRow(
+                    title: "Record a Playing Song",
+                    detail: "Listen through the microphone and build a practice line locally.",
+                    icon: "waveform.badge.mic",
+                    action: onRecordSong
+                )
+                sourceRow(
+                    title: "Song Link",
+                    detail: "Direct audio works locally; streaming links need an authorized provider.",
+                    icon: "link",
+                    action: onPasteLink
+                )
+            }
+            .navigationTitle("Add Practice Song")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func sourceRow(title: String, detail: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(AppColors.primaryGradientStart)
+                    .frame(width: 28, height: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.headline)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+
 private struct PracticeSetupSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @Binding var selectedKey: String
     @Binding var selectedLayout: HarmonicaLayout
     @Binding var sensitivity: Double
     @Binding var callAndResponseEnabled: Bool
-    let liveAmplitude: Double
+    @ObservedObject var audioService: AudioEngineService
+    let isCalibrating: Bool
     let onAutoCalibrate: () -> Void
+    let onShowQuickStart: () -> Void
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Harmonica") {
-                    Picker("Key", selection: $selectedKey) {
-                        Text("Key of C").tag("C")
-                    }
+                    LabeledContent("Key", value: "C")
                     Picker("Tuning", selection: $selectedLayout) {
                         Text("Standard Richter").tag(HarmonicaLayout.diatonicC)
                         Text("Lee Oskar").tag(HarmonicaLayout.leeOskarC)
                     }
+                    Text("This version currently supports C harmonicas. Additional keys will appear here when transposition is available.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Listening") {
@@ -876,11 +947,21 @@ private struct PracticeSetupSheet: View {
                         Slider(value: $sensitivity, in: 0.005...0.2)
                     }
                     Button(action: onAutoCalibrate) {
-                        Label("Auto-Calibrate to Room", systemImage: "waveform.badge.magnifyingglass")
+                        Label(
+                            isCalibrating ? "Listening to Room…" : "Auto-Calibrate to Room",
+                            systemImage: "waveform.badge.magnifyingglass"
+                        )
                     }
-                    Text("Keep the room quiet, then calibrate. Current input level: \(String(format: "%.0f%%", min(1, liveAmplitude / 0.2) * 100)).")
+                    .disabled(isCalibrating)
+                    Text("Keep the room quiet while calibration samples 1.5 seconds. Current input level: \(String(format: "%.0f%%", min(1, audioService.amplitude / 0.2) * 100)).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                Section("Help") {
+                    Button(action: onShowQuickStart) {
+                        Label("Show Quick Start", systemImage: "questionmark.circle")
+                    }
                 }
             }
             .navigationTitle("Practice Setup")

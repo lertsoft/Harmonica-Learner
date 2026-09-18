@@ -27,9 +27,15 @@ enum AudioEngineServiceError: LocalizedError {
     }
 }
 
+struct PitchSample: Equatable {
+    let frequency: Double
+    let amplitude: Double
+
+    static let silence = PitchSample(frequency: 0, amplitude: 0)
+}
+
 final class AudioEngineService: NSObject, ObservableObject {
-    @Published private(set) var frequency: Double = 0
-    @Published private(set) var amplitude: Double = 0
+    @Published private(set) var pitchSample: PitchSample = .silence
     @Published private(set) var isRunning: Bool = false
     @Published private(set) var isRecordingFreestyle: Bool = false
     @Published private(set) var isRecordingSong: Bool = false
@@ -47,6 +53,9 @@ final class AudioEngineService: NSObject, ObservableObject {
 
     private(set) var lastFreestyleRecordingDuration: TimeInterval = 0
     private(set) var lastSongRecordingDuration: TimeInterval = 0
+
+    var frequency: Double { pitchSample.frequency }
+    var amplitude: Double { pitchSample.amplitude }
 
     override init() {
         super.init()
@@ -90,8 +99,7 @@ final class AudioEngineService: NSObject, ObservableObject {
                 let frequency = Double(pitches.first ?? 0)
                 let amplitude = Double(amplitudes.first ?? 0)
                 DispatchQueue.main.async {
-                    self.frequency = frequency
-                    self.amplitude = amplitude
+                    self.pitchSample = PitchSample(frequency: frequency, amplitude: amplitude)
                 }
             }
 

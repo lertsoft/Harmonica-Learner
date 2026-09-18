@@ -10,57 +10,55 @@ struct ControlsView: View {
     let isImportedSong: Bool
     let canPlaySynthesizedCover: Bool
     let isSynthesizedCoverPlaying: Bool
+    let usesCompactLayout: Bool
     let onPrimaryAction: () -> Void
-    let onShowSettings: () -> Void
     let onToggleFreestylePlayback: () -> Void
     let onRemoveFreestyleAudio: () -> Void
     let onToggleSynthesizedCover: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            Button(action: onShowSettings) {
-                Image(systemName: "gearshape.fill")
-                    .frame(width: 48, height: 48)
-            }
-            .buttonStyle(StudioControlButtonStyle())
-            .accessibilityLabel("Audio settings")
-
             Button(action: onPrimaryAction) {
                 Label(primaryTitle, systemImage: primaryIcon)
-                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .frame(maxWidth: .infinity, minHeight: usesCompactLayout ? 44 : 50)
             }
             .buttonStyle(StudioControlButtonStyle(isProminent: true, tint: primaryTint))
 
             if !isFreestyleMode && (isFreestyleSong || canPlaySynthesizedCover) {
-                Menu {
-                    if canPlaySynthesizedCover {
-                        Button(action: onToggleSynthesizedCover) {
-                            Label(
-                                isSynthesizedCoverPlaying ? "Stop Harmonica Cover" : "Hear Harmonica Cover",
-                                systemImage: isSynthesizedCoverPlaying ? "stop.fill" : "music.note.list"
-                            )
+                if canPlayFreestyleAudio {
+                    Menu {
+                        if canPlaySynthesizedCover {
+                            Button(action: onToggleSynthesizedCover) {
+                                Label(
+                                    isSynthesizedCoverPlaying ? "Stop Harmonica Cover" : "Hear Harmonica Cover",
+                                    systemImage: isSynthesizedCoverPlaying ? "stop.fill" : "music.note.list"
+                                )
+                            }
                         }
-                    }
-                    if canPlayFreestyleAudio {
                         Button(action: onToggleFreestylePlayback) {
                             Label(isFreestylePlayingAudio ? "Stop Source Audio" : sourceAudioTitle,
                                   systemImage: isFreestylePlayingAudio ? "stop.fill" : "speaker.wave.2.fill")
                         }
-                    }
-                    if isFreestyleSong && canPlayFreestyleAudio {
                         Button(role: .destructive, action: onRemoveFreestyleAudio) {
                             Label("Remove Stored Audio", systemImage: "speaker.slash.fill")
                         }
+                    } label: {
+                        Image(systemName: "waveform")
+                            .frame(width: 48, height: usesCompactLayout ? 44 : 48)
                     }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 48, height: 48)
+                    .buttonStyle(StudioControlButtonStyle())
+                    .accessibilityLabel("Playback options")
+                } else if canPlaySynthesizedCover {
+                    Button(action: onToggleSynthesizedCover) {
+                        Image(systemName: isSynthesizedCoverPlaying ? "stop.fill" : "music.note.list")
+                            .frame(width: 48, height: usesCompactLayout ? 44 : 48)
+                    }
+                    .buttonStyle(StudioControlButtonStyle())
+                    .accessibilityLabel(isSynthesizedCoverPlaying ? "Stop harmonica cover" : "Hear harmonica cover")
                 }
-                .buttonStyle(StudioControlButtonStyle())
-                .accessibilityLabel("More recording controls")
             }
         }
-        .padding(10)
+        .padding(usesCompactLayout ? 6 : 10)
         .liquidGlass(cornerRadius: 18, intensity: 0.04)
     }
 
@@ -104,7 +102,7 @@ struct StudioControlButtonStyle: ButtonStyle {
         ControlsView(isAudioRunning: false, isFreestyleMode: false, isFreestyleRecording: false,
                      canPlayFreestyleAudio: false, isFreestylePlayingAudio: false, isFreestyleSong: false,
                      isImportedSong: false, canPlaySynthesizedCover: true, isSynthesizedCoverPlaying: false,
-                     onPrimaryAction: {}, onShowSettings: {}, onToggleFreestylePlayback: {},
+                     usesCompactLayout: false, onPrimaryAction: {}, onToggleFreestylePlayback: {},
                      onRemoveFreestyleAudio: {}, onToggleSynthesizedCover: {})
             .padding()
     }

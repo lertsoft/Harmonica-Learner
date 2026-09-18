@@ -11,6 +11,10 @@ struct AdaptivePracticeLayout: Equatable {
         isWide
     }
 
+    var usesCompactHeader: Bool {
+        isWide && isCompactHeight
+    }
+
     static func resolve(
         size: CGSize,
         usesAccessibilityText: Bool = false

@@ -63,6 +63,31 @@ final class PracticeViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.matchState, .hit)
     }
 
+    func testFinalSustainedHitCompletesPractice() {
+        let viewModel = makeViewModelWithSong(["A4"])
+
+        for _ in 0..<6 {
+            viewModel.handleFrequency(440, amplitude: 0.2)
+        }
+
+        XCTAssertTrue(viewModel.isPracticeComplete)
+        XCTAssertEqual(viewModel.currentNoteIndex, 0)
+        XCTAssertEqual(viewModel.matchState, .hit)
+    }
+
+    func testRestartClearsCompletedPractice() {
+        let viewModel = makeViewModelWithSong(["A4"])
+        for _ in 0..<6 {
+            viewModel.handleFrequency(440, amplitude: 0.2)
+        }
+
+        viewModel.startNewAttempt()
+
+        XCTAssertFalse(viewModel.isPracticeComplete)
+        XCTAssertEqual(viewModel.currentNoteIndex, 0)
+        XCTAssertEqual(viewModel.matchState, .idle)
+    }
+
     func testMissResetsSustainedHitWindow() {
         let viewModel = makeViewModelWithSong(["A4", "B4"])
 
@@ -90,6 +115,18 @@ final class PracticeViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.currentNoteIndex, 0)
         XCTAssertEqual(viewModel.matchState, .idle)
+    }
+
+    func testSelectingSongForPracticeLeavesFreestyleMode() throws {
+        let viewModel = makeViewModelWithSong(["A4"])
+        let song = makeSong(title: "New Song", notes: ["C5"])
+        viewModel.songs.append(song)
+        viewModel.enterFreestyleMode()
+
+        try viewModel.selectSongForGuidedPractice(song)
+
+        XCTAssertFalse(viewModel.isFreestyleMode)
+        XCTAssertEqual(viewModel.selectedSong?.id, song.id)
     }
 
     func testCurrentTargetHoleReflectsLayoutForCurrentNote() {

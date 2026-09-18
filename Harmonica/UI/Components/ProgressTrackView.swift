@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ProgressTrackView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let song: HarmonicaSong?
     let currentNoteIndex: Int
     let matchState: NoteMatchState
@@ -13,6 +14,13 @@ struct ProgressTrackView: View {
     private var noteWidth: CGFloat { min(90, max(58, scaledNoteWidth)) }
     private var noteHeight: CGFloat { min(86, max(58, scaledNoteHeight)) }
     private var noteSpacing: CGFloat { min(16, max(8, scaledNoteSpacing)) }
+
+    private var visibleIndices: [Int] {
+        guard let song, !song.notes.isEmpty else { return [] }
+        let lowerBound = max(0, currentNoteIndex - 3)
+        let upperBound = min(song.notes.count - 1, currentNoteIndex + 3)
+        return Array(lowerBound...upperBound)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -33,21 +41,25 @@ struct ProgressTrackView: View {
 
             GeometryReader { geometry in
                 let centerX = geometry.size.width / 2
-                let offset = -CGFloat(currentNoteIndex) * (noteWidth + noteSpacing)
-
-                HStack(spacing: noteSpacing) {
-                    ForEach(Array((song?.notes ?? []).enumerated()), id: \.0) { index, note in
+                ZStack {
+                    ForEach(visibleIndices, id: \.self) { index in
+                        let note = song?.notes[index]
                         NoteChipView(
-                            note: note.note,
-                            hole: HarmonicaHole.fromCode(note.hole),
+                            note: note?.note ?? "",
+                            hole: note.flatMap { layout.hole(for: $0.note) },
                             state: chipState(for: index),
-                            isActive: index == currentNoteIndex
+                            isActive: index == currentNoteIndex,
+                            position: index + 1,
+                            total: song?.notes.count ?? 0
                         )
                         .frame(width: noteWidth)
+                        .position(
+                            x: centerX + CGFloat(index - currentNoteIndex) * (noteWidth + noteSpacing),
+                            y: noteHeight / 2
+                        )
                     }
                 }
-                .offset(x: centerX - noteWidth / 2 + offset)
-                .animation(.spring(response: 0.38, dampingFraction: 0.82), value: currentNoteIndex)
+                .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.82), value: currentNoteIndex)
             }
             .frame(height: noteHeight)
             .mask(
@@ -72,7 +84,7 @@ struct ProgressTrackView: View {
                 Capsule()
                     .fill(AppGradients.primary)
                     .frame(width: progressWidth(in: geometry.size.width))
-                    .animation(.spring(response: 0.38, dampingFraction: 0.8), value: currentNoteIndex)
+                    .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.8), value: currentNoteIndex)
             }
         }
         .frame(height: 5)
@@ -110,10 +122,13 @@ enum NoteChipState {
 }
 
 struct NoteChipView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let note: String
     let hole: HarmonicaHole?
     let state: NoteChipState
     let isActive: Bool
+    let position: Int
+    let total: Int
 
     var body: some View {
         VStack(spacing: 1) {
@@ -142,7 +157,9 @@ struct NoteChipView: View {
                 .strokeBorder(borderColor, lineWidth: isActive ? 1.2 : 0.8)
         )
         .scaleEffect(isActive ? 1.05 : 1.0)
-        .animation(.spring(response: 0.28, dampingFraction: 0.75), value: isActive)
+        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.75), value: isActive)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
     }
 
     private var backgroundColor: Color {
@@ -172,6 +189,17 @@ struct NoteChipView: View {
     private var tabText: String {
         guard let hole else { return "—" }
         return "\(hole.airflow == .blow ? "+" : "−")\(hole.index)"
+    }
+
+    private var accessibilitySummary: String {
+        let instruction = hole.map { "hole \($0.index), \($0.airflow == .blow ? "blow" : "draw")" } ?? "unmapped note"
+        let status: String
+        switch state {
+        case .completed: status = "completed"
+        case .current, .active: status = "current"
+        case .upcoming: status = "upcoming"
+        }
+        return "Note \(position) of \(total), \(note), \(instruction), \(status)"
     }
 }
 

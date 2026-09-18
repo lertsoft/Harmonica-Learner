@@ -7,6 +7,7 @@ final class AdaptivePracticeLayoutTests: XCTestCase {
 
         XCTAssertTrue(layout.isCompactHeight)
         XCTAssertFalse(layout.usesTwoColumnPractice)
+        XCTAssertFalse(layout.usesCompactHeader)
         XCTAssertEqual(layout.horizontalPadding, 10)
     }
 
@@ -24,6 +25,7 @@ final class AdaptivePracticeLayoutTests: XCTestCase {
 
         XCTAssertTrue(layout.isCompactHeight)
         XCTAssertTrue(layout.usesTwoColumnPractice)
+        XCTAssertTrue(layout.usesCompactHeader)
         XCTAssertEqual(layout.horizontalPadding, 24)
         XCTAssertEqual(layout.contentMaxWidth, 1_080)
     }

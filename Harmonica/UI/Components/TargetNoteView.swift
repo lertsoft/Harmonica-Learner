@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct TargetNoteView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let targetNote: String?
     let targetHole: HarmonicaHole?
     let detectedPitch: NotePitch?
@@ -8,6 +9,8 @@ struct TargetNoteView: View {
     let isAudioRunning: Bool
     let isReferenceNotePlaying: Bool
     let canProgress: Bool
+    let isComplete: Bool
+    let usesCompactLayout: Bool
     let onRestart: () -> Void
     let onSkip: () -> Void
     let onToggleReferenceNote: () -> Void
@@ -15,58 +18,71 @@ struct TargetNoteView: View {
     @State private var successScale: CGFloat = 1
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack(alignment: .center, spacing: 14) {
+        VStack(spacing: usesCompactLayout ? 8 : 16) {
+            HStack(alignment: .center, spacing: usesCompactLayout ? 8 : 14) {
                 utilityButton("arrow.counterclockwise", label: "Restart", action: onRestart)
                 VStack(spacing: 3) {
                     Text("PLAY")
                         .font(AppTypography.sectionLabel)
                         .foregroundStyle(AppColors.textTertiary)
-                    Text(tabInstruction)
-                        .font(.custom("AvenirNextCondensed-DemiBold", size: 58, relativeTo: .largeTitle))
+                    Text(isComplete ? "Complete" : tabInstruction)
+                        .font(.custom("AvenirNextCondensed-DemiBold", size: usesCompactLayout ? 42 : 58, relativeTo: .largeTitle))
                         .foregroundStyle(matchState == .hit ? AppColors.hitGradientStart : AppColors.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
                         .scaleEffect(successScale)
-                    Text(targetNote.map { "Concert pitch \($0)" } ?? "Choose a song to begin")
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.textSecondary)
+                    if !usesCompactLayout {
+                        Text(isComplete ? "Nice work — you finished this song" : targetNote.map { "Concert pitch \($0)" } ?? "Choose a song to begin")
+                            .font(AppTypography.caption)
+                            .foregroundStyle(AppColors.textSecondary)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 utilityButton("forward.end.fill", label: "Skip", action: onSkip)
             }
 
-            if let targetHole { HarmonicaCombView(activeHole: targetHole, matchState: matchState) }
-            Divider().overlay(Color.white.opacity(0.08))
-            HStack(spacing: 16) {
-                PitchTargetGauge(pitch: detectedPitch, matchState: matchState, isListening: isAudioRunning)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(statusTitle).font(AppTypography.bodyStrong).foregroundStyle(statusColor)
-                    Text(statusDetail)
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            if let targetHole, !usesCompactLayout {
+                HarmonicaCombView(activeHole: targetHole, matchState: matchState)
+            }
+            if !usesCompactLayout {
+                Divider().overlay(Color.white.opacity(0.08))
+            }
+            if usesCompactLayout {
+                HStack(spacing: 10) {
+                    Text(compactStatusLine)
+                        .font(AppTypography.bodyStrong)
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                    Spacer(minLength: 0)
+                    referenceButton
                 }
-                Spacer(minLength: 0)
-                Button(action: onToggleReferenceNote) {
-                    Image(systemName: isReferenceNotePlaying ? "stop.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(AppColors.primaryGradientStart.opacity(0.2)))
+            } else {
+                HStack(spacing: 16) {
+                    if isAudioRunning, detectedPitch != nil {
+                        PitchTargetGauge(pitch: detectedPitch, matchState: matchState, isListening: true)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(statusTitle).font(AppTypography.bodyStrong).foregroundStyle(statusColor)
+                        Text(statusDetail)
+                            .font(AppTypography.caption)
+                            .foregroundStyle(AppColors.textSecondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    referenceButton
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(AppColors.textPrimary)
-                .accessibilityLabel(isReferenceNotePlaying ? "Stop reference note" : "Hear target note")
             }
         }
-        .padding(16)
-        .liquidGlass(cornerRadius: 20, intensity: 0.035)
-        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(matchState == .hit ? AppColors.hitGradientStart.opacity(0.8) : Color.clear, lineWidth: 2))
+        .padding(usesCompactLayout ? 10 : 16)
+        .liquidGlass(cornerRadius: AppMetrics.cardRadius, intensity: 0.035)
+        .overlay(RoundedRectangle(cornerRadius: AppMetrics.cardRadius).strokeBorder(matchState == .hit ? AppColors.hitGradientStart.opacity(0.8) : Color.clear, lineWidth: 2))
         .onChange(of: matchState) { oldValue, newValue in
             guard newValue == .hit, oldValue != .hit else { return }
-            withAnimation(.spring(response: 0.2, dampingFraction: 0.45)) { successScale = 1.08 }
+            withAnimation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.45)) { successScale = reduceMotion ? 1 : 1.08 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { successScale = 1 }
+                withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) { successScale = 1 }
             }
         }
     }
@@ -85,12 +101,25 @@ struct TargetNoteView: View {
         .accessibilityLabel(label)
     }
 
+    private var referenceButton: some View {
+        Button(action: onToggleReferenceNote) {
+            Image(systemName: isReferenceNotePlaying ? "stop.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(AppColors.primaryGradientStart.opacity(0.2)))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(AppColors.textPrimary)
+        .accessibilityLabel(isReferenceNotePlaying ? "Stop reference note" : "Hear target note")
+    }
+
     private var tabInstruction: String {
         guard let hole = targetHole else { return "—" }
         return "\(hole.airflow == .blow ? "+" : "−")\(hole.index)  \(hole.airflow == .blow ? "Blow" : "Draw")"
     }
 
     private var statusTitle: String {
+        if isComplete { return "Practice complete" }
         guard isAudioRunning else { return "Microphone off" }
         switch matchState {
         case .hit: return "In tune"
@@ -100,10 +129,19 @@ struct TargetNoteView: View {
     }
 
     private var statusDetail: String {
+        if isComplete { return "Restart to practice it again and tighten your accuracy." }
         guard isAudioRunning else { return "Start practice when you’re ready." }
         guard let detectedPitch else { return "Play one clear hole and hold it steady." }
         let cents = Int(abs(detectedPitch.centsOffset).rounded())
         return matchState == .hit ? "Hold for a moment to advance." : "Heard \(detectedPitch.fullName) • \(cents)¢ off target"
+    }
+
+    private var compactStatusLine: String {
+        if isComplete { return "Practice complete" }
+        guard isAudioRunning else { return "Mic off • Start when ready" }
+        guard let detectedPitch else { return "Listening • Play one clear hole" }
+        let cents = Int(abs(detectedPitch.centsOffset).rounded())
+        return matchState == .hit ? "In tune • Hold to advance" : "\(detectedPitch.fullName) • \(cents)¢ off target"
     }
 
     private var statusColor: Color {
@@ -152,6 +190,7 @@ private struct HarmonicaCombView: View {
 }
 
 private struct PitchTargetGauge: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let pitch: NotePitch?
     let matchState: NoteMatchState
     let isListening: Bool
@@ -169,7 +208,7 @@ private struct PitchTargetGauge: View {
             .foregroundStyle(gaugeColor)
         }
         .frame(width: 66, height: 66)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: pitch?.centsOffset)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: pitch?.centsOffset)
     }
 
     private var progress: CGFloat {
@@ -193,7 +232,8 @@ private struct PitchTargetGauge: View {
         AppColors.backgroundDeep.ignoresSafeArea()
         TargetNoteView(targetNote: "C5", targetHole: HarmonicaHole(index: 4, airflow: .blow),
                        detectedPitch: NotePitch(noteName: "C", octave: 5, centsOffset: -7), matchState: .hit,
-                       isAudioRunning: true, isReferenceNotePlaying: false, canProgress: true,
+                       isAudioRunning: true, isReferenceNotePlaying: false, canProgress: true, isComplete: false,
+                       usesCompactLayout: false,
                        onRestart: {}, onSkip: {}, onToggleReferenceNote: {})
             .padding()
     }

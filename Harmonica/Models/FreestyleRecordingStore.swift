@@ -16,13 +16,14 @@ final class FreestyleRecordingStore {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private let documentsDirectoryOverride: URL?
+    private var cachedRecordings: [FreestyleRecording]?
 
     init(fileManager: FileManager = .default, documentsDirectoryURL: URL? = nil) {
         self.fileManager = fileManager
         self.documentsDirectoryOverride = documentsDirectoryURL
         self.encoder = JSONEncoder()
         self.decoder = JSONDecoder()
-        self.encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        self.encoder.outputFormatting = [.sortedKeys]
         self.encoder.dateEncodingStrategy = .iso8601
         self.decoder.dateDecodingStrategy = .iso8601
     }
@@ -30,9 +31,17 @@ final class FreestyleRecordingStore {
     func loadAll() -> [FreestyleRecording] {
         do {
             try ensureStorageDirectories()
-            guard fileManager.fileExists(atPath: indexURL.path) else { return [] }
-            let data = try Data(contentsOf: indexURL)
-            let decoded = try decoder.decode([FreestyleRecording].self, from: data)
+            let decoded: [FreestyleRecording]
+            if let cachedRecordings {
+                decoded = cachedRecordings
+            } else {
+                guard fileManager.fileExists(atPath: indexURL.path) else {
+                    cachedRecordings = []
+                    return []
+                }
+                let data = try Data(contentsOf: indexURL)
+                decoded = try decoder.decode([FreestyleRecording].self, from: data)
+            }
             var normalized: [FreestyleRecording] = []
             normalized.reserveCapacity(decoded.count)
 
@@ -61,6 +70,8 @@ final class FreestyleRecordingStore {
 
             if normalized != decoded {
                 try writeIndex(normalized)
+            } else {
+                cachedRecordings = normalized
             }
 
             return normalized.sorted { $0.createdAt > $1.createdAt }
@@ -177,5 +188,6 @@ final class FreestyleRecordingStore {
     private func writeIndex(_ recordings: [FreestyleRecording]) throws {
         let data = try encoder.encode(recordings)
         try data.write(to: indexURL, options: .atomic)
+        cachedRecordings = recordings
     }
 }

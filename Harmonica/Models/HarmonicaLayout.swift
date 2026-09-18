@@ -6,7 +6,7 @@ enum HarmonicaLayout: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var noteToHole: [String: HarmonicaHole] {
+    private static let standardNoteToHole: [String: HarmonicaHole] = {
         let pairs: [(String, HarmonicaHole)] = [
             ("C4", HarmonicaHole(index: 1, airflow: .blow)),
             ("D4", HarmonicaHole(index: 1, airflow: .draw)),
@@ -34,6 +34,20 @@ enum HarmonicaLayout: String, CaseIterable, Identifiable {
             map[note] = hole
         }
         return map
+    }()
+
+    private static let standardPlayableNotes: [(name: String, midi: Int)] =
+        standardNoteToHole.keys.compactMap { note in
+            NoteMapper.midiNumber(for: note).map { (note, $0) }
+        }
+
+    var noteToHole: [String: HarmonicaHole] {
+        // Both supported C layouts currently share the same natural-note map.
+        // Keep this switch so another layout can supply a cached table later.
+        switch self {
+        case .diatonicC, .leeOskarC:
+            return Self.standardNoteToHole
+        }
     }
 
     func hole(for noteName: String) -> HarmonicaHole? {
@@ -44,10 +58,8 @@ enum HarmonicaLayout: String, CaseIterable, Identifiable {
         guard let detected = NoteMapper.pitch(for: frequency),
               let detectedMIDI = NoteMapper.midiNumber(for: detected.fullName) else { return nil }
 
-        return noteToHole.keys.min { left, right in
-            let leftMIDI = NoteMapper.midiNumber(for: left) ?? detectedMIDI
-            let rightMIDI = NoteMapper.midiNumber(for: right) ?? detectedMIDI
-            return abs(leftMIDI - detectedMIDI) < abs(rightMIDI - detectedMIDI)
-        }
+        return Self.standardPlayableNotes.min { left, right in
+            abs(left.midi - detectedMIDI) < abs(right.midi - detectedMIDI)
+        }?.name
     }
 }

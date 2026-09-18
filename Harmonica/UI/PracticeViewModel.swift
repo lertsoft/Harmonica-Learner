@@ -3,13 +3,34 @@ import AVFoundation
 import Foundation
 import SwiftUI
 
+private struct PracticeLiveState: Equatable {
+    var matchState: NoteMatchState = .idle
+    var detectedPitch: NotePitch?
+}
+
+private final class AnalysisCancellationToken: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+}
+
 final class PracticeViewModel: ObservableObject {
     @Published var songs: [HarmonicaSong] = []
     @Published var selectedSong: HarmonicaSong?
     @Published var attemptCount: Int = 0
     @Published var currentNoteIndex: Int = 0
-    @Published var matchState: NoteMatchState = .idle
-    @Published var detectedPitch: NotePitch?
+    @Published private var liveState = PracticeLiveState()
     @Published var sensitivity: Double = 0.035
     @Published var selectedLayout: HarmonicaLayout = .diatonicC
     @Published var selectedKey: String = "C"
@@ -24,6 +45,10 @@ final class PracticeViewModel: ObservableObject {
     @Published private(set) var isRecordingSong: Bool = false
     @Published private(set) var songRecordingElapsed: TimeInterval = 0
     @Published var songLinkErrorMessage: String?
+    @Published private(set) var isAudioRunning: Bool = false
+    @Published private(set) var isPracticeComplete: Bool = false
+    @Published private(set) var isCalibratingSensitivity: Bool = false
+    @Published private(set) var importProgress: Double?
 
     @Published private(set) var bundledSongs: [HarmonicaSong] = []
     @Published private(set) var freestyleRecordings: [FreestyleRecording] = []
@@ -59,6 +84,23 @@ final class PracticeViewModel: ObservableObject {
     private var songRecordingID: UUID?
     private var songRecordingAudioFileName: String?
     private var songRecordingTitle: String?
+    private var calibrationAmplitudes: [Double] = []
+    private var importCancellationToken: AnalysisCancellationToken?
+    private var linkImportTask: Task<Void, Never>?
+
+    var matchState: NoteMatchState {
+        get { liveState.matchState }
+        set { liveState.matchState = newValue }
+    }
+
+    var detectedPitch: NotePitch? {
+        get { liveState.detectedPitch }
+        set { liveState.detectedPitch = newValue }
+    }
+
+    var canCancelSongImport: Bool {
+        importCancellationToken != nil || linkImportTask != nil
+    }
 
     init(
         recordingStore: FreestyleRecordingStore = FreestyleRecordingStore(),
@@ -141,8 +183,9 @@ final class PracticeViewModel: ObservableObject {
 
     func enterFreestyleMode() {
         isFreestyleMode = true
-        matchState = .idle
+        liveState = PracticeLiveState()
         currentNoteIndex = 0
+        isPracticeComplete = false
         hitStreak = 0
     }
 
@@ -153,14 +196,27 @@ final class PracticeViewModel: ObservableObject {
         }
     }
 
+    func selectSongForGuidedPractice(_ song: HarmonicaSong) throws {
+        if isFreestyleRecording {
+            _ = try stopFreestyleRecordingAndSave(selectSavedSong: false)
+        }
+        exitFreestyleMode()
+        selectedSong = song
+    }
+
     func startNewAttempt() {
         attemptCount += 1
         currentNoteIndex = 0
-        matchState = .idle
+        liveState = PracticeLiveState()
+        isPracticeComplete = false
         hitStreak = 0
     }
 
     func handleFrequency(_ frequency: Double, amplitude: Double) {
+        if isCalibratingSensitivity {
+            calibrationAmplitudes.append(max(0, amplitude))
+        }
+
         let hasFrequencySignal = frequency > 20 && frequency < 5_000
         let hasAmplitudeSignal = amplitude >= sensitivity
 
@@ -168,41 +224,41 @@ final class PracticeViewModel: ObservableObject {
             if isFreestyleRecording {
                 processFreestyleCapture(pitch: nil, timestamp: Date())
             }
-            matchState = .idle
-            detectedPitch = nil
+            liveState = PracticeLiveState()
             hitStreak = 0
             return
         }
 
-        detectedPitch = NoteMapper.pitch(for: frequency)
+        let detectedPitch = NoteMapper.pitch(for: frequency)
 
         if isFreestyleRecording {
             processFreestyleCapture(pitch: detectedPitch, timestamp: Date())
         }
 
         guard let detectedPitch else {
-            matchState = .idle
+            liveState = PracticeLiveState()
             hitStreak = 0
             return
         }
 
 
         guard !isReferenceNotePlaying, !isFreestylePlayingAudio else {
-            matchState = .idle
+            liveState = PracticeLiveState(matchState: .idle, detectedPitch: detectedPitch)
             hitStreak = 0
             return
         }
 
         if isFreestyleMode {
-            matchState = .idle
+            liveState = PracticeLiveState(matchState: .idle, detectedPitch: detectedPitch)
             hitStreak = 0
             return
         }
 
         guard let targetNote = currentTargetNote else { return }
-        matchState = evaluator.evaluate(detected: detectedPitch, targetNote: targetNote, attempt: attemptCount)
+        let evaluation = evaluator.evaluate(detected: detectedPitch, targetNote: targetNote, attempt: attemptCount)
+        liveState = PracticeLiveState(matchState: evaluation, detectedPitch: detectedPitch)
 
-        if matchState == .hit {
+        if evaluation == .hit {
             hitStreak += 1
             if hitStreak >= sustainedHitSampleCount {
                 advanceNote()
@@ -223,7 +279,8 @@ final class PracticeViewModel: ObservableObject {
         }
         currentNoteIndex = 0
         hitStreak = 0
-        matchState = .idle
+        liveState = PracticeLiveState()
+        isPracticeComplete = false
 
         if isFreestyleRecording {
             do {
@@ -431,6 +488,9 @@ final class PracticeViewModel: ObservableObject {
         }
 
         isImportingSong = true
+        importProgress = 0
+        let cancellationToken = AnalysisCancellationToken()
+        importCancellationToken = cancellationToken
         let title = titleOverride?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             ?? sourceURL.deletingPathExtension().lastPathComponent
         let layout = selectedLayout
@@ -438,9 +498,25 @@ final class PracticeViewModel: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                let analysis = try ImportedSongAnalyzer().analyze(url: destinationURL, layout: layout)
+                let analysis = try ImportedSongAnalyzer().analyze(
+                    url: destinationURL,
+                    layout: layout,
+                    progress: { progress in
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self, self.importCancellationToken === cancellationToken else { return }
+                            if abs((self.importProgress ?? -1) - progress) >= 0.01 || progress >= 1 {
+                                self.importProgress = progress
+                            }
+                        }
+                    },
+                    shouldCancel: { cancellationToken.isCancelled }
+                )
                 DispatchQueue.main.async {
-                    guard let self else { return }
+                    guard let self, self.importCancellationToken === cancellationToken,
+                          !cancellationToken.isCancelled else {
+                        try? FileManager.default.removeItem(at: destinationURL)
+                        return
+                    }
                     let recording = FreestyleRecording(
                         id: recordingID,
                         title: title,
@@ -469,12 +545,19 @@ final class PracticeViewModel: ObservableObject {
                         self.scheduleNotice("Could not save the imported song: \(error.localizedDescription)")
                     }
                     self.isImportingSong = false
+                    self.importProgress = nil
+                    self.importCancellationToken = nil
                 }
             } catch {
                 try? FileManager.default.removeItem(at: destinationURL)
                 DispatchQueue.main.async {
-                    self?.isImportingSong = false
-                    self?.scheduleNotice("Could not analyze that song: \(error.localizedDescription)")
+                    guard let self, self.importCancellationToken === cancellationToken else { return }
+                    self.isImportingSong = false
+                    self.importProgress = nil
+                    self.importCancellationToken = nil
+                    if !cancellationToken.isCancelled {
+                        self.scheduleNotice("Could not analyze that song: \(error.localizedDescription)")
+                    }
                 }
             }
         }
@@ -555,13 +638,32 @@ final class PracticeViewModel: ObservableObject {
         let layout = selectedLayout
         let key = selectedKey
         isImportingSong = true
+        importProgress = 0
+        let cancellationToken = AnalysisCancellationToken()
+        importCancellationToken = cancellationToken
         resetSongRecordingState(keepElapsed: true)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                let analysis = try ImportedSongAnalyzer().analyze(url: url, layout: layout)
+                let analysis = try ImportedSongAnalyzer().analyze(
+                    url: url,
+                    layout: layout,
+                    progress: { progress in
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self, self.importCancellationToken === cancellationToken else { return }
+                            if abs((self.importProgress ?? -1) - progress) >= 0.01 || progress >= 1 {
+                                self.importProgress = progress
+                            }
+                        }
+                    },
+                    shouldCancel: { cancellationToken.isCancelled }
+                )
                 DispatchQueue.main.async {
-                    guard let self else { return }
+                    guard let self, self.importCancellationToken === cancellationToken,
+                          !cancellationToken.isCancelled else {
+                        try? FileManager.default.removeItem(at: url)
+                        return
+                    }
                     let recording = FreestyleRecording(
                         id: id,
                         title: title,
@@ -588,15 +690,33 @@ final class PracticeViewModel: ObservableObject {
                         self.scheduleNotice("Could not save the recorded song: \(error.localizedDescription)")
                     }
                     self.isImportingSong = false
+                    self.importProgress = nil
+                    self.importCancellationToken = nil
                 }
             } catch {
                 try? FileManager.default.removeItem(at: url)
                 DispatchQueue.main.async {
-                    self?.isImportingSong = false
-                    self?.scheduleNotice("Could not analyze the recording: \(error.localizedDescription)")
+                    guard let self, self.importCancellationToken === cancellationToken else { return }
+                    self.isImportingSong = false
+                    self.importProgress = nil
+                    self.importCancellationToken = nil
+                    if !cancellationToken.isCancelled {
+                        self.scheduleNotice("Could not analyze the recording: \(error.localizedDescription)")
+                    }
                 }
             }
         }
+    }
+
+    func cancelSongImport() {
+        guard isImportingSong else { return }
+        importCancellationToken?.cancel()
+        linkImportTask?.cancel()
+        linkImportTask = nil
+        importCancellationToken = nil
+        importProgress = nil
+        isImportingSong = false
+        scheduleNotice("Song analysis cancelled.")
     }
 
     func cancelSongRecording() {
@@ -623,10 +743,11 @@ final class PracticeViewModel: ObservableObject {
         }
 
         isImportingSong = true
+        importProgress = nil
         let layout = selectedLayout
         let key = selectedKey
 
-        Task { @MainActor [weak self] in
+        linkImportTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let result = try await SongLinkImportService().resolve(
@@ -634,18 +755,25 @@ final class PracticeViewModel: ObservableObject {
                     layout: layout,
                     key: key
                 )
+                try Task.checkCancellation()
                 switch result {
                 case .downloadedAudio(let temporaryURL):
                     self.isImportingSong = false
+                    self.linkImportTask = nil
                     self.importSong(from: temporaryURL)
                     try? FileManager.default.removeItem(at: temporaryURL)
 
                 case .transcription(let transcription):
                     try self.saveLinkedTranscription(transcription, layout: layout)
                     self.isImportingSong = false
+                    self.linkImportTask = nil
                 }
+            } catch is CancellationError {
+                self.isImportingSong = false
+                self.linkImportTask = nil
             } catch {
                 self.isImportingSong = false
+                self.linkImportTask = nil
                 self.songLinkErrorMessage = error.localizedDescription
             }
         }
@@ -692,8 +820,32 @@ final class PracticeViewModel: ObservableObject {
     }
 
     func advanceNote() {
-        guard currentNoteIndex + 1 < currentSongNotes.count else { return }
-        currentNoteIndex += 1
+        guard !currentSongNotes.isEmpty, !isPracticeComplete else { return }
+        if currentNoteIndex + 1 < currentSongNotes.count {
+            currentNoteIndex += 1
+        } else {
+            isPracticeComplete = true
+        }
+    }
+
+    func startSensitivityCalibration(duration: TimeInterval = 1.5) {
+        guard !isCalibratingSensitivity else { return }
+        calibrationAmplitudes.removeAll(keepingCapacity: true)
+        isCalibratingSensitivity = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            guard let self, self.isCalibratingSensitivity else { return }
+            let sorted = self.calibrationAmplitudes.sorted()
+            let percentileIndex = min(
+                max(0, sorted.count - 1),
+                Int(Double(max(0, sorted.count - 1)) * 0.9)
+            )
+            let noiseFloor = sorted.isEmpty ? 0.005 : sorted[percentileIndex]
+            self.sensitivity = min(0.2, max(0.012, noiseFloor * 1.8))
+            self.isCalibratingSensitivity = false
+            self.calibrationAmplitudes.removeAll(keepingCapacity: true)
+            self.scheduleNotice("Microphone sensitivity calibrated to this room.")
+        }
     }
 
     private func rebuildMergedSongs(keepCurrentSelection: Bool) {
@@ -825,9 +977,16 @@ final class PracticeViewModel: ObservableObject {
     }
 
     private func bindAudioService() {
-        audioService.objectWillChange
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
+        audioService.$pitchSample
+            .sink { [weak self] sample in
+                self?.handleFrequency(sample.frequency, amplitude: sample.amplitude)
+            }
+            .store(in: &cancellables)
+
+        audioService.$isRunning
+            .removeDuplicates()
+            .sink { [weak self] value in
+                self?.isAudioRunning = value
             }
             .store(in: &cancellables)
 

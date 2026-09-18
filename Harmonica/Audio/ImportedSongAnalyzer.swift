@@ -1,4 +1,5 @@
 import AVFoundation
+import Accelerate
 import Foundation
 
 struct ImportedSongAnalysis {
@@ -7,13 +8,16 @@ struct ImportedSongAnalysis {
     let usedFallback: Bool
 }
 
-enum ImportedSongAnalyzerError: LocalizedError {
+enum ImportedSongAnalyzerError: LocalizedError, Equatable {
     case unreadableAudio
+    case cancelled
 
     var errorDescription: String? {
         switch self {
         case .unreadableAudio:
             return "The selected audio file could not be read."
+        case .cancelled:
+            return "Song analysis was cancelled."
         }
     }
 }
@@ -25,7 +29,12 @@ struct ImportedSongAnalyzer {
     private let maximumAnalysisDuration: TimeInterval = 180
     private let windowFrameCount: AVAudioFrameCount = 8_192
 
-    func analyze(url: URL, layout: HarmonicaLayout) throws -> ImportedSongAnalysis {
+    func analyze(
+        url: URL,
+        layout: HarmonicaLayout,
+        progress: ((Double) -> Void)? = nil,
+        shouldCancel: () -> Bool = { false }
+    ) throws -> ImportedSongAnalysis {
         let file = try AVAudioFile(forReading: url)
         let sourceRate = file.processingFormat.sampleRate
         guard sourceRate > 0, file.length > 0 else {
@@ -36,8 +45,10 @@ struct ImportedSongAnalyzer {
         let maximumFrames = AVAudioFramePosition(duration * sourceRate)
         var framesRead: AVAudioFramePosition = 0
         var observations: [PitchObservation] = []
+        progress?(0)
 
         while framesRead < maximumFrames {
+            guard !shouldCancel() else { throw ImportedSongAnalyzerError.cancelled }
             let remaining = maximumFrames - framesRead
             let capacity = AVAudioFrameCount(min(AVAudioFramePosition(windowFrameCount), remaining))
             guard let buffer = AVAudioPCMBuffer(
@@ -50,8 +61,13 @@ struct ImportedSongAnalyzer {
             framesRead += AVAudioFramePosition(buffer.frameLength)
 
             let windowDuration = Double(buffer.frameLength) / sourceRate
-            let frequency = dominantFrequency(in: buffer, sourceSampleRate: sourceRate)
+            let frequency = try dominantFrequency(
+                in: buffer,
+                sourceSampleRate: sourceRate,
+                shouldCancel: shouldCancel
+            )
             observations.append(PitchObservation(frequency: frequency, duration: windowDuration))
+            progress?(min(1, Double(framesRead) / Double(maximumFrames)))
         }
 
         let suggested = Self.makeSuggestedEvents(from: observations, layout: layout)
@@ -120,8 +136,9 @@ struct ImportedSongAnalyzer {
 
     private func dominantFrequency(
         in buffer: AVAudioPCMBuffer,
-        sourceSampleRate: Double
-    ) -> Double? {
+        sourceSampleRate: Double,
+        shouldCancel: () -> Bool
+    ) throws -> Double? {
         guard let channels = buffer.floatChannelData else { return nil }
         let channelCount = Int(buffer.format.channelCount)
         let frameCount = Int(buffer.frameLength)
@@ -151,6 +168,11 @@ struct ImportedSongAnalyzer {
         let rms = sqrt(samples.reduce(0) { $0 + $1 * $1 } / Double(samples.count))
         guard rms >= 0.008 else { return nil }
 
+        var energyPrefix = [Double](repeating: 0, count: samples.count + 1)
+        for index in samples.indices {
+            energyPrefix[index + 1] = energyPrefix[index] + samples[index] * samples[index]
+        }
+
         let minimumFrequency = 90.0
         let maximumFrequency = 1_200.0
         let minimumLag = max(2, Int(effectiveRate / maximumFrequency))
@@ -159,22 +181,30 @@ struct ImportedSongAnalyzer {
 
         var bestLag = 0
         var bestCorrelation = 0.0
-        for lag in minimumLag...maximumLag {
-            var numerator = 0.0
-            var firstEnergy = 0.0
-            var secondEnergy = 0.0
-            for index in 0..<(samples.count - lag) {
-                let first = samples[index]
-                let second = samples[index + lag]
-                numerator += first * second
-                firstEnergy += first * first
-                secondEnergy += second * second
-            }
-            let denominator = sqrt(firstEnergy * secondEnergy)
-            let correlation = denominator > 0 ? numerator / denominator : 0
-            if correlation > bestCorrelation {
-                bestCorrelation = correlation
-                bestLag = lag
+        try samples.withUnsafeBufferPointer { sampleBuffer in
+            guard let baseAddress = sampleBuffer.baseAddress else { return }
+            for lag in minimumLag...maximumLag {
+                if lag.isMultiple(of: 16), shouldCancel() {
+                    throw ImportedSongAnalyzerError.cancelled
+                }
+                let comparisonCount = samples.count - lag
+                var numerator = 0.0
+                vDSP_dotprD(
+                    baseAddress,
+                    1,
+                    baseAddress.advanced(by: lag),
+                    1,
+                    &numerator,
+                    vDSP_Length(comparisonCount)
+                )
+                let firstEnergy = energyPrefix[comparisonCount]
+                let secondEnergy = energyPrefix[samples.count] - energyPrefix[lag]
+                let denominator = sqrt(firstEnergy * secondEnergy)
+                let correlation = denominator > 0 ? numerator / denominator : 0
+                if correlation > bestCorrelation {
+                    bestCorrelation = correlation
+                    bestLag = lag
+                }
             }
         }
 
