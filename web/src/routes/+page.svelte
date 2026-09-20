@@ -1,29 +1,50 @@
 <script lang="ts">
-	import Nav from '$lib/Nav.svelte';
-	import Hero from '$lib/Hero.svelte';
-	import TrustBar from '$lib/TrustBar.svelte';
-	import HowItWorks from '$lib/HowItWorks.svelte';
-	import PracticeDemo from '$lib/PracticeDemo.svelte';
-	import Songs from '$lib/Songs.svelte';
-	import Features from '$lib/Features.svelte';
-	import Quote from '$lib/Quote.svelte';
-	import FinalCta from '$lib/FinalCta.svelte';
-	import Footer from '$lib/Footer.svelte';
+	import { onMount } from "svelte";
+	import Landing from "$lib/Landing.svelte";
+
+	let theme = $state<"dark" | "light">("dark");
+
+	onMount(() => {
+		const params = new URLSearchParams(window.location.search);
+		const tParam = params.get("theme");
+		if (tParam === "light" || tParam === "dark") {
+			theme = tParam;
+		} else {
+			const saved = localStorage.getItem("harmonica_theme");
+			if (saved === "light" || saved === "dark") {
+				theme = saved;
+			}
+		}
+	});
+
+	function handleToggleTheme() {
+		theme = theme === "dark" ? "light" : "dark";
+		if (typeof window !== "undefined") {
+			localStorage.setItem("harmonica_theme", theme);
+			const url = new URL(window.location.href);
+			url.searchParams.set("theme", theme);
+			window.history.replaceState({}, "", url.toString());
+		}
+	}
 </script>
 
 <svelte:head>
-	<title>Harmonica Learner — Turn songs into playable harmonica tabs</title>
+	<title
+		>Harmonica: Learn to Play - Turn any song into playable harmonica tabs</title
+	>
 </svelte:head>
 
-<Nav />
-<main>
-	<Hero />
-	<TrustBar />
-	<HowItWorks />
-	<PracticeDemo />
-	<Songs />
-	<Features />
-	<Quote />
-	<FinalCta />
+<main
+	class="page-container"
+	class:is-light={theme === "light"}
+	data-theme={theme}
+>
+	<Landing {theme} onToggleTheme={handleToggleTheme} />
 </main>
-<Footer />
+
+<style>
+	.page-container {
+		min-height: 100vh;
+		position: relative;
+	}
+</style>
