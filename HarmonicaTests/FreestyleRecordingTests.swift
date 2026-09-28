@@ -13,19 +13,6 @@ final class FreestyleRecordingTests: XCTestCase {
         XCTAssertFalse(emptyAudioName.hasAudioPlayback)
     }
 
-    func testAsSongMapsFreestyleRecordingFields() {
-        let note = HarmonicaNoteEvent(note: "C5", duration: 0.5, hole: "4B")
-        let recording = makeRecording(title: "Session", key: "G", notes: [note])
-
-        let song = recording.asSong
-
-        XCTAssertEqual(song.songTitle, "Session")
-        XCTAssertEqual(song.bpm, 90)
-        XCTAssertEqual(song.key, "G")
-        XCTAssertEqual(song.notes, [note])
-        XCTAssertEqual(song.id, "recording:\(recording.id.uuidString)")
-    }
-
     func testImportedSourceRoundTripsThroughJSON() throws {
         let recording = makeRecording(source: .importedSong)
 

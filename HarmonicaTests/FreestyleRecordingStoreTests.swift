@@ -3,15 +3,18 @@ import XCTest
 
 final class FreestyleRecordingStoreTests: XCTestCase {
     private var store: FreestyleRecordingStore!
+    private var storeDirectory: URL!
 
     override func setUpWithError() throws {
-        store = FreestyleRecordingStore()
-        clearStore()
+        storeDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FreestyleRecordingStoreTests-\(UUID().uuidString)")
+        store = FreestyleRecordingStore(documentsDirectoryURL: storeDirectory)
     }
 
     override func tearDown() {
-        clearStore()
+        try? FileManager.default.removeItem(at: storeDirectory)
         store = nil
+        storeDirectory = nil
         super.tearDown()
     }
 
@@ -165,12 +168,5 @@ final class FreestyleRecordingStoreTests: XCTestCase {
         let url = store.audioURL(forFileName: fileName)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("audio".utf8).write(to: url)
-    }
-
-    private func clearStore() {
-        guard let store else { return }
-        for recording in store.loadAll() {
-            try? store.delete(id: recording.id)
-        }
     }
 }

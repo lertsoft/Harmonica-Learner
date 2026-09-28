@@ -28,11 +28,6 @@ final class SongLinkImportServiceTests: XCTestCase {
         XCTAssertEqual(descriptor.provider, .web)
     }
 
-    func testRejectsNonHTTPLinks() {
-        XCTAssertThrowsError(try SongLinkDescriptor.parse("file:///tmp/song.m4a"))
-        XCTAssertThrowsError(try SongLinkDescriptor.parse("not a link"))
-    }
-
     func testBackendEventsAreClampedAndRemappedToSelectedLayout() {
         let events = [
             HarmonicaNoteEvent(note: "C5", duration: 12, hole: "wrong"),

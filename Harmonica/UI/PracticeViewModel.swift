@@ -8,7 +8,8 @@ private struct PracticeLiveState: Equatable {
     var detectedPitch: NotePitch?
 }
 
-private final class AnalysisCancellationToken: @unchecked Sendable {
+// Shared by the UI and analysis queue; the lock, not an actor, protects its state.
+nonisolated private final class AnalysisCancellationToken: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
 
@@ -49,6 +50,8 @@ final class PracticeViewModel: ObservableObject {
     @Published private(set) var isPracticeComplete: Bool = false
     @Published private(set) var isCalibratingSensitivity: Bool = false
     @Published private(set) var importProgress: Double?
+    @Published private(set) var successfulMusicLibraryImports = 0
+    var hasFullAccess = false
 
     @Published private(set) var bundledSongs: [HarmonicaSong] = []
     @Published private(set) var freestyleRecordings: [FreestyleRecording] = []
@@ -61,6 +64,7 @@ final class PracticeViewModel: ObservableObject {
 
     private let evaluator: NoteEvaluation
     private let recordingStore: FreestyleRecordingStore
+    private let libraryImportAllowance: LibraryImportAllowance
 
     private var hitStreak: Int = 0
     // PitchTap publishes at most every 50 ms, so six stable samples represent a 300 ms hold.
@@ -87,6 +91,7 @@ final class PracticeViewModel: ObservableObject {
     private var calibrationAmplitudes: [Double] = []
     private var importCancellationToken: AnalysisCancellationToken?
     private var linkImportTask: Task<Void, Never>?
+    private var libraryExporter: AVAssetExportSession?
 
     var matchState: NoteMatchState {
         get { liveState.matchState }
@@ -99,21 +104,26 @@ final class PracticeViewModel: ObservableObject {
     }
 
     var canCancelSongImport: Bool {
-        importCancellationToken != nil || linkImportTask != nil
+        importCancellationToken != nil || linkImportTask != nil || libraryExporter != nil
     }
 
     init(
         recordingStore: FreestyleRecordingStore = FreestyleRecordingStore(),
+        libraryImportAllowance: LibraryImportAllowance = LibraryImportAllowance(),
         enableAudioBindings: Bool? = nil
     ) {
         let runningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
             || NSClassFromString("XCTestCase") != nil
         self.shouldBindAudioService = enableAudioBindings ?? !runningTests
         self.recordingStore = recordingStore
+        self.libraryImportAllowance = libraryImportAllowance
         self.evaluator = NoteEvaluation(toleranceModel: toleranceModel)
 
         bundledSongs = SongLibrary.loadBundledSongs()
         freestyleRecordings = recordingStore.loadAll()
+        successfulMusicLibraryImports = libraryImportAllowance.count(
+            existingLibrarySongs: freestyleRecordings.filter { $0.source == .musicLibrary }.count
+        )
         rebuildMergedSongs(keepCurrentSelection: false)
 
         if shouldBindAudioService {
@@ -461,6 +471,10 @@ final class PracticeViewModel: ObservableObject {
         source: RecordingSource = .importedSong
     ) {
         guard !isImportingSong else { return }
+        guard source != .musicLibrary || hasFullAccess || successfulMusicLibraryImports < LibraryImportAllowance.freeSongCount else {
+            scheduleNotice("Unlock Harmonica Learner to add more songs from your Music Library.")
+            return
+        }
         let didAccess = sourceURL.startAccessingSecurityScopedResource()
         defer {
             if didAccess {
@@ -530,7 +544,13 @@ final class PracticeViewModel: ObservableObject {
                     )
 
                     do {
+                        let previousLibrarySongCount = self.freestyleRecordings.filter { $0.source == .musicLibrary }.count
                         try self.recordingStore.save(recording)
+                        if source == .musicLibrary {
+                            self.successfulMusicLibraryImports = self.libraryImportAllowance.recordSuccessfulImport(
+                                existingLibrarySongs: previousLibrarySongCount
+                            )
+                        }
                         self.freestyleRecordings = self.recordingStore.loadAll()
                         self.rebuildMergedSongs(keepCurrentSelection: false)
                         self.selectedSong = self.songs.first(where: { $0.id == recording.asSong.id })
@@ -565,6 +585,10 @@ final class PracticeViewModel: ObservableObject {
 
     func importSongFromMusicLibrary(assetURL: URL, title: String) {
         guard !isImportingSong else { return }
+        guard hasFullAccess || successfulMusicLibraryImports < LibraryImportAllowance.freeSongCount else {
+            scheduleNotice("Unlock Harmonica Learner to add more songs from your Music Library.")
+            return
+        }
         isImportingSong = true
 
         let temporaryURL = FileManager.default.temporaryDirectory
@@ -577,24 +601,29 @@ final class PracticeViewModel: ObservableObject {
         }
         exporter.outputURL = temporaryURL
         exporter.outputFileType = .m4a
+        libraryExporter = exporter
 
         exporter.exportAsynchronously { [weak self] in
             DispatchQueue.main.async {
-                guard let self else { return }
+                defer { try? FileManager.default.removeItem(at: temporaryURL) }
+                guard let self, self.libraryExporter === exporter else { return }
+                self.libraryExporter = nil
                 self.isImportingSong = false
                 guard exporter.status == .completed else {
-                    try? FileManager.default.removeItem(at: temporaryURL)
                     self.scheduleNotice("That song could not be opened. Download an unprotected copy to the device or choose it from Files.")
                     return
                 }
                 self.importSong(from: temporaryURL, titleOverride: title, source: .musicLibrary)
-                try? FileManager.default.removeItem(at: temporaryURL)
             }
         }
     }
 
     func startSongRecording(title: String) throws {
         guard !isRecordingSong, !isImportingSong else { return }
+        if isFreestyleRecording {
+            _ = try stopFreestyleRecordingAndSave(selectSavedSong: false)
+        }
+        notePlaybackService.stop()
         let id = UUID()
         let fileName = "\(id.uuidString).m4a"
         let url = recordingStore.audioURL(forFileName: fileName)
@@ -712,6 +741,8 @@ final class PracticeViewModel: ObservableObject {
         guard isImportingSong else { return }
         importCancellationToken?.cancel()
         linkImportTask?.cancel()
+        libraryExporter?.cancelExport()
+        libraryExporter = nil
         linkImportTask = nil
         importCancellationToken = nil
         importProgress = nil

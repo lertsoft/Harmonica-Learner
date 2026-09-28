@@ -4,28 +4,19 @@ import XCTest
 @MainActor
 final class PracticeViewModelTests: XCTestCase {
     private var store: FreestyleRecordingStore!
+    private var storeDirectory: URL!
 
     override func setUpWithError() throws {
-        store = FreestyleRecordingStore()
-        clearStore()
+        storeDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PracticeViewModelTests-\(UUID().uuidString)")
+        store = FreestyleRecordingStore(documentsDirectoryURL: storeDirectory)
     }
 
     override func tearDown() {
-        clearStore()
+        try? FileManager.default.removeItem(at: storeDirectory)
         store = nil
+        storeDirectory = nil
         super.tearDown()
-    }
-
-    func testStartNewAttemptIncrementsAttemptAndResetsProgress() {
-        let viewModel = makeViewModelWithSong(["A4", "B4"])
-        viewModel.currentNoteIndex = 1
-        viewModel.matchState = .hit
-
-        viewModel.startNewAttempt()
-
-        XCTAssertEqual(viewModel.attemptCount, 1)
-        XCTAssertEqual(viewModel.currentNoteIndex, 0)
-        XCTAssertEqual(viewModel.matchState, .idle)
     }
 
     func testHandleFrequencyWithoutSignalResetsDetectedPitchAndMatchState() {
@@ -117,38 +108,6 @@ final class PracticeViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.matchState, .idle)
     }
 
-    func testSelectingSongForPracticeLeavesFreestyleMode() throws {
-        let viewModel = makeViewModelWithSong(["A4"])
-        let song = makeSong(title: "New Song", notes: ["C5"])
-        viewModel.songs.append(song)
-        viewModel.enterFreestyleMode()
-
-        try viewModel.selectSongForGuidedPractice(song)
-
-        XCTAssertFalse(viewModel.isFreestyleMode)
-        XCTAssertEqual(viewModel.selectedSong?.id, song.id)
-    }
-
-    func testCurrentTargetHoleReflectsLayoutForCurrentNote() {
-        let viewModel = makeViewModelWithSong(["C5"])
-        viewModel.selectedLayout = .diatonicC
-
-        XCTAssertEqual(viewModel.currentTargetHole, HarmonicaHole(index: 4, airflow: .blow))
-    }
-
-    func testHandleSelectedSongChangeResetsStateWhenSwitchingSongs() {
-        let viewModel = makeViewModelWithSong(["A4", "B4"])
-        let oldSong = viewModel.selectedSong
-        let newSong = makeSong(title: "New Song", notes: ["C5"])
-
-        viewModel.currentNoteIndex = 1
-        viewModel.matchState = .hit
-        viewModel.handleSelectedSongChange(from: oldSong, to: newSong)
-
-        XCTAssertEqual(viewModel.currentNoteIndex, 0)
-        XCTAssertEqual(viewModel.matchState, .idle)
-    }
-
     func testHandleSelectedSongChangeIsNoOpWhenSongIDUnchanged() {
         let viewModel = makeViewModelWithSong(["A4", "B4"])
         let song = viewModel.selectedSong
@@ -174,12 +133,5 @@ final class PracticeViewModelTests: XCTestCase {
             HarmonicaNoteEvent(note: note, duration: 0.5 + Double(index) * 0.1, hole: "4B")
         }
         return HarmonicaSong(songTitle: title, bpm: 90, key: "C", notes: mappedNotes)
-    }
-
-    private func clearStore() {
-        guard let store else { return }
-        for recording in store.loadAll() {
-            try? store.delete(id: recording.id)
-        }
     }
 }

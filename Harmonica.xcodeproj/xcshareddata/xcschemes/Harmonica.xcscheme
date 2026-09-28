@@ -35,6 +35,20 @@
                ReferencedContainer = "container:Harmonica.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "3C0E00052F39AA1100AB0001"
+               BuildableName = "HarmonicaUITests.xctest"
+               BlueprintName = "HarmonicaUITests"
+               ReferencedContainer = "container:Harmonica.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -52,6 +66,17 @@
                BlueprintIdentifier = "2B8F8A4A2F39AA1100AB0001"
                BuildableName = "HarmonicaTests.xctest"
                BlueprintName = "HarmonicaTests"
+               ReferencedContainer = "container:Harmonica.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "3C0E00052F39AA1100AB0001"
+               BuildableName = "HarmonicaUITests.xctest"
+               BlueprintName = "HarmonicaUITests"
                ReferencedContainer = "container:Harmonica.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -77,6 +102,9 @@
             ReferencedContainer = "container:Harmonica.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <StoreKitConfigurationFileReference
+         identifier = "../HarmonicaTests/FullAccess.storekit">
+      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

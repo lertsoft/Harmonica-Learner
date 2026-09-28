@@ -152,13 +152,17 @@ final class AudioEngineService: NSObject, ObservableObject {
 
     func stopFreestyleRecording() throws {
         guard let recorder = freestyleRecorder else { return }
-        recorder.stop()
         lastFreestyleRecordingDuration = recorder.currentTime
+        recorder.stop()
         freestyleRecorder = nil
         isRecordingFreestyle = false
     }
 
     func startSongRecording(to url: URL) throws {
+        // Release the live input graph so it cannot monitor microphone audio
+        // through the speaker while the song recorder is capturing it.
+        stop()
+        engine.stop()
         try configureAudioSession()
         stopFreestyleAudio()
 
@@ -186,8 +190,8 @@ final class AudioEngineService: NSObject, ObservableObject {
 
     func stopSongRecording() {
         guard let recorder = songRecorder else { return }
-        recorder.stop()
         lastSongRecordingDuration = recorder.currentTime
+        recorder.stop()
         songRecorder = nil
         isRecordingSong = false
     }

@@ -77,6 +77,8 @@ struct TargetNoteView: View {
         }
         .padding(usesCompactLayout ? 10 : 16)
         .liquidGlass(cornerRadius: AppMetrics.cardRadius, intensity: 0.035)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("target-note-card")
         .overlay(RoundedRectangle(cornerRadius: AppMetrics.cardRadius).strokeBorder(matchState == .hit ? AppColors.hitGradientStart.opacity(0.8) : Color.clear, lineWidth: 2))
         .onChange(of: matchState) { oldValue, newValue in
             guard newValue == .hit, oldValue != .hit else { return }

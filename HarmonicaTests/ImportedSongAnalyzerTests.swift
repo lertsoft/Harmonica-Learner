@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+import Combine
 @testable import Harmonica
 
 final class ImportedSongAnalyzerTests: XCTestCase {
@@ -102,6 +103,68 @@ final class ImportedSongAnalyzerTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? ImportedSongAnalyzerError, .cancelled)
         }
+    }
+
+    @MainActor
+    func testLibraryExportPersistsPlayableSong() async throws {
+        let input = try makeToneFile(duration: 1.5)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: input)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let store = FreestyleRecordingStore(documentsDirectoryURL: directory)
+        let defaultsSuite = "LibraryExportTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsSuite))
+        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
+        let model = PracticeViewModel(
+            recordingStore: store,
+            libraryImportAllowance: LibraryImportAllowance(defaults: defaults),
+            enableAudioBindings: false
+        )
+        let saved = expectation(description: "Library audio exported and analyzed")
+        let observation = model.$freestyleRecordings.filter { !$0.isEmpty }.first().sink { _ in saved.fulfill() }
+        defer { observation.cancel() }
+        model.importSongFromMusicLibrary(assetURL: input, title: "My Tune")
+        XCTAssertTrue(model.canCancelSongImport)
+        await fulfillment(of: [saved], timeout: 15)
+        let recording = try XCTUnwrap(store.loadAll().first)
+        XCTAssertEqual(recording.title, "My Tune")
+        XCTAssertEqual(recording.source, .musicLibrary)
+        XCTAssertFalse(recording.notes.isEmpty)
+        XCTAssertTrue(recording.notes.allSatisfy { $0.note == "C5" })
+        XCTAssertNotNil(store.audioURL(for: recording))
+        let reopened = FreestyleRecordingStore(documentsDirectoryURL: directory)
+        XCTAssertEqual(reopened.loadAll().first?.id, recording.id)
+    }
+
+    @MainActor
+    func testCancelledLibraryExportDoesNotSaveSong() async throws {
+        let input = try makeToneFile(duration: 1.5)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: input)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let store = FreestyleRecordingStore(documentsDirectoryURL: directory)
+        let defaultsSuite = "LibraryExportTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsSuite))
+        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
+        let model = PracticeViewModel(
+            recordingStore: store,
+            libraryImportAllowance: LibraryImportAllowance(defaults: defaults),
+            enableAudioBindings: false
+        )
+        let saved = expectation(description: "Cancelled export never saves")
+        saved.isInverted = true
+        let observation = model.$freestyleRecordings.filter { !$0.isEmpty }.sink { _ in saved.fulfill() }
+        defer { observation.cancel() }
+        model.importSongFromMusicLibrary(assetURL: input, title: "Cancelled")
+        model.cancelSongImport()
+        XCTAssertFalse(model.isImportingSong)
+        XCTAssertFalse(model.canCancelSongImport)
+        await fulfillment(of: [saved], timeout: 2)
+        XCTAssertTrue(store.loadAll().isEmpty)
     }
 
     private func makeToneFile(duration: TimeInterval) throws -> URL {

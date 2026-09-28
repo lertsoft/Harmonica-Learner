@@ -31,6 +31,10 @@ This is anative iOS app that helps you learn and practice your harmonica skills.
 - **Full-mix fallback** — If a song has no clear lead pitch, the app supplies a starter harmonica phrase so the song still has useful practice targets.
 - **Optional listening** — Imported audio is preserved for on-demand playback; practicing the suggested line remains silent by default.
 
+Local file, Music Library, and microphone imports are processed on-device without uploading audio. The microphone captures a nearby speaker or live performance, not another app's internal audio. Analysis uses at most the first three minutes and produces a simplified melody, not full chord transcription; dense mixes may yield an explicitly labeled generic fallback rather than the song's melody. Use recordings you have permission to use; a synthesized cover does not automatically remove composition rights obligations.
+
+Device QA: allow/deny Music Library and microphone permissions; choose a synced unprotected track; confirm cloud/DRM tracks are excluded; cancel an export; record at least one second, stop and analyze, then reopen the saved song and play its preview; discard a recording and confirm no saved entry remains. Media-library and microphone behavior requires a physical-device check.
+
 ### 📖 Built-in Song Library
 Includes 7 bundled songs ranging from fundamentals to blues:
 
@@ -50,7 +54,9 @@ Includes 7 bundled songs ranging from fundamentals to blues:
 - **Spring animations** — Smooth, physics-based animations throughout (note transitions, success pulses, panel gestures).
 - **Draggable controls panel** — Swipe-down to dismiss the controls panel; tap to bring it back.
 - **Adaptive layouts** — Scroll-safe phone layouts, compact landscape controls, two-column wide-screen practice, and Dynamic Type support keep controls usable without clipping or overlap.
-- **Onboarding flow** — First-launch overlay explaining blow/draw mechanics and microphone permissions.
+- **Onboarding flow** — Four first-launch steps cover blow/draw notation, guided practice, song sources, freestyle recording, and microphone access. Practice setup can reopen the tour.
+- **Music Library trial** — Five successfully saved Music Library songs are included. The fifth opens a full-screen, one-time purchase gate with Restore Purchase. Cancelled or failed imports do not count; deleting a song does not reset the allowance.
+- **Review request** — After a completed guided practice session, StoreKit may ask for an App Store review once per app version, subject to Apple's display limits.
 
 ---
 
@@ -112,25 +118,17 @@ Provider behavior, official policy references, and the backend JSON contract are
 
 ## 🧪 Testing
 
-```
-HarmonicaTests/
-├── AttemptToleranceModelTests.swift
-├── FreestyleRecordingStoreTests.swift
-├── FreestyleRecordingTests.swift
-├── HarmonicaHoleTests.swift
-├── HarmonicaLayoutTests.swift
-├── ImportedSongAnalyzerTests.swift
-├── NoteEvaluationTests.swift
-├── NoteMapperTests.swift
-├── PracticeViewModelTests.swift
-└── SongLibraryTests.swift
-```
+`HarmonicaUITests` exercises onboarding, song selection and progression, setup persistence, saved-song management, import entry, the purchase gate, landscape, and accessibility text through the running app. Focused XCTest cases remain for pitch/audio algorithms, storage edge cases and cancellation, and StoreKit behavior that simulator UI automation cannot drive reliably. `Backend/spotify-worker.test.mjs` tests the worker through HTTP requests and mocked Spotify responses.
 
-Run tests via Xcode (`⌘U`) or from the command line:
+Run the iOS suite via Xcode (`⌘U`) or from the command line:
 
 ```bash
-xcodebuild test -scheme Harmonica -destination 'platform=iOS Simulator,name=iPhone 16'
+xcodebuild test -project Harmonica.xcodeproj -scheme Harmonica \
+  -destination 'platform=iOS Simulator,name=iPhone 16e'
+node --test Backend/spotify-worker.test.mjs
 ```
+
+Run the UI suite on an iPad simulator as well when changing layout or navigation. Microphone input, Music Library permissions and DRM behavior, and actual audio playback still need physical-device QA. See [Docs/Testing.md](Docs/Testing.md) for the coverage map and commands.
 
 ---
 
@@ -158,7 +156,13 @@ xcodebuild test -scheme Harmonica -destination 'platform=iOS Simulator,name=iPho
 
 4. **Build & run** — Select a target device or simulator and hit `⌘R`.
 
-> **Note:** The app requires microphone access. On first launch, an onboarding overlay will guide you through granting permission. A usage description is configured in `Info.plist` under `NSMicrophoneUsageDescription`.
+> **Note:** Guided listening and recording require microphone access. The first-launch tour explains the permission, and users can explore without granting it. A usage description is configured in `Info.plist` under `NSMicrophoneUsageDescription`.
+
+### In-app purchase setup
+
+Create a **non-consumable** in-app purchase in App Store Connect with product ID `com.kosukobo.Harmonica.fullunlock`, set its price and availability, and submit it with the app. The unlock screen uses StoreKit's localized price and verified current entitlements; purchases can be restored from the same screen. Until that product is configured and available, the purchase button cannot complete a transaction. Test purchase and restore with a StoreKit test configuration or Sandbox account before release.
+
+The shared Xcode Run scheme uses `HarmonicaTests/FullAccess.storekit` for local StoreKit testing. Its `4.99` price is a simulator placeholder, not the App Store price. The file stays out of the release app bundle. Builds launched outside that scheme need the App Store Connect product or a Sandbox setup.
 
 ---
 

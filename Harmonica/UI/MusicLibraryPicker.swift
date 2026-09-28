@@ -14,6 +14,8 @@ struct MusicLibraryPicker: UIViewControllerRepresentable {
         let picker = MPMediaPickerController(mediaTypes: .music)
         picker.delegate = context.coordinator
         picker.allowsPickingMultipleItems = false
+        picker.showsCloudItems = false
+        picker.showsItemsWithProtectedAssets = false
         picker.prompt = "Choose a downloaded, unprotected song"
         return picker
     }
@@ -38,6 +40,7 @@ struct MusicLibraryPicker: UIViewControllerRepresentable {
         func mediaPicker(_ mediaPicker: MPMediaPickerController, didPickMediaItems mediaItemCollection: MPMediaItemCollection) {
             mediaPicker.dismiss(animated: true)
             guard let item = mediaItemCollection.items.first,
+                  !item.hasProtectedAsset, !item.isCloudItem,
                   let assetURL = item.assetURL else {
                 onFailure("That song is protected, belongs to Apple Music, or is not downloaded on this device. Choose an unprotected local song instead.")
                 return

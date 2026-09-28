@@ -75,6 +75,8 @@ struct ProgressTrackView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .liquidGlass(cornerRadius: 16, intensity: 0.03)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("progress-track")
     }
 
     private var progressBar: some View {

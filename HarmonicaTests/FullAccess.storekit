@@ -1,0 +1,34 @@
+{
+  "identifier" : "HARMONICAFULLACCESS",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "FULLACCESS01",
+      "localizations" : [
+        {
+          "description" : "Continue practicing and importing songs after the five-song Music Library trial.",
+          "displayName" : "Harmonica Learner Full Access",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.kosukobo.Harmonica.fullunlock",
+      "referenceName" : "Harmonica Learner Full Access",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "type" : "local",
+  "version" : {
+    "major" : 2,
+    "minor" : 0
+  }
+}
