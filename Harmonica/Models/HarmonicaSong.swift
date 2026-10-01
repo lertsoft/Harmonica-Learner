@@ -42,8 +42,22 @@ struct HarmonicaSong: Codable, Identifiable, Hashable {
     }
 }
 
-struct HarmonicaNoteEvent: Codable, Hashable {
+nonisolated struct HarmonicaNoteEvent: Codable, Hashable {
     let note: String
     let duration: Double
     let hole: String
+    /// Seconds in the original recording; nil for legacy sequential tablature.
+    let startTime: TimeInterval?
+    /// Detected concert pitches before transposition, octave folding or approximation.
+    let sourceNotes: [String]?
+    let sourceDuration: TimeInterval?
+
+    init(note: String, duration: Double, hole: String, startTime: TimeInterval? = nil, sourceNotes: [String]? = nil, sourceDuration: TimeInterval? = nil) {
+        self.note = note
+        self.duration = duration
+        self.hole = hole
+        self.startTime = startTime
+        self.sourceNotes = sourceNotes
+        self.sourceDuration = sourceDuration
+    }
 }

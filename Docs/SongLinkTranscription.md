@@ -54,7 +54,9 @@ The endpoint returns note events rather than source audio:
 }
 ```
 
-The app accepts at most 512 events, discards notes unavailable on the selected layout, clamps durations to 0.1–4 seconds, and calculates hole guidance itself rather than trusting the response's `hole` value.
+Legacy note events remain supported. Optional `startTime` (seconds) allows gaps and simultaneous pitches; optional `sourceNotes` carries a detected pitch group such as `["C5", "E5", "G5"]`. Send one event per pitch group, or overlapping timed single-note events. The client estimates one transposition and register for the song, moves unavailable registers by octaves, and approximates remaining accidentals rather than dropping them. Chords become sequential single-hole arpeggios. All valid events are retained without the old 512-event cap or duration rounding. Nonfinite/nonpositive durations and invalid timestamps are ignored. Hole guidance is computed locally.
+
+The client stores `sourceNotes`, `startTime`, and `sourceDuration` alongside the playable notes so source timing survives a slowed arpeggio. These fields are optional for old recordings. They describe estimated source evidence, not verified chord labels.
 
 ## Deployable Spotify implementation
 
@@ -64,8 +66,10 @@ The app accepts at most 512 events, discards notes unavailable on the selected l
 2. obtains an app access token with client credentials kept on the worker;
 3. requests official track metadata and Audio Analysis chroma segments;
 4. filters low-confidence and quiet segments;
-5. maps dominant pitch classes to C-diatonic harmonica notes and samples across the whole song;
-6. returns note events to the iOS app without downloading Spotify audio.
+5. retains up to four strong pitch classes per segment, including accidentals, with original timing across the whole song;
+6. returns estimated pitch-group events to the iOS app without downloading Spotify audio.
+
+Chroma has no octave information. The worker assigns octave 5 as a practice register and returns pitch-class estimates; the iOS client performs the playable arrangement. This is not a verified transcription of individual instruments.
 
 Copy `Backend/wrangler.toml.example` to `Backend/wrangler.toml`, then configure secrets:
 

@@ -4,6 +4,8 @@ struct TargetNoteView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let targetNote: String?
     let targetHole: HarmonicaHole?
+    var sourceNotes: [String]? = nil
+    var arrangementExplanation: String? = nil
     let detectedPitch: NotePitch?
     let matchState: NoteMatchState
     let isAudioRunning: Bool
@@ -32,15 +34,29 @@ struct TargetNoteView: View {
                         .minimumScaleFactor(0.55)
                         .scaleEffect(successScale)
                     if !usesCompactLayout {
-                        Text(isComplete ? "Nice work — you finished this song" : targetNote.map { "Concert pitch \($0)" } ?? "Choose a song to begin")
+                        Text(isComplete ? "Nice work — you finished this song" : targetNote.map { "Concert pitch \($0)" } ?? (arrangementExplanation == nil ? "Choose a song to begin" : "No playable notes recovered"))
                             .font(AppTypography.caption)
                             .foregroundStyle(AppColors.textSecondary)
                     }
                 }
                 .frame(maxWidth: .infinity)
+                .onboardingCoachTarget(.targetNote)
                 utilityButton("forward.end.fill", label: "Skip", action: onSkip)
             }
 
+            if let sourceNotes, sourceNotes.count > 1 {
+                Text("Arpeggio from \(sourceNotes.joined(separator: " · "))")
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("source-chord-context")
+            }
+            if let arrangementExplanation, !usesCompactLayout {
+                Text(arrangementExplanation)
+                    .font(AppTypography.caption)
+                    .foregroundStyle(AppColors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let targetHole, !usesCompactLayout {
                 HarmonicaCombView(activeHole: targetHole, matchState: matchState)
             }

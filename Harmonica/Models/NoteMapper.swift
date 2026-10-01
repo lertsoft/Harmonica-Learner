@@ -1,6 +1,6 @@
 import Foundation
 
-struct NotePitch: Equatable {
+nonisolated struct NotePitch: Equatable {
     let noteName: String
     let octave: Int
     let centsOffset: Double
@@ -10,14 +10,14 @@ struct NotePitch: Equatable {
     }
 }
 
-struct NoteMapper {
+nonisolated struct NoteMapper {
     private static let noteNames = [
         "C", "C#", "D", "D#", "E", "F",
         "F#", "G", "G#", "A", "A#", "B"
     ]
 
     static func pitch(for frequency: Double) -> NotePitch? {
-        guard frequency > 0 else { return nil }
+        guard frequency.isFinite, frequency >= 1, frequency <= 100_000 else { return nil }
         let midi = Int(round(12 * log2(frequency / 440.0) + 69))
         let name = noteNames[midi.mod(12)]
         let octave = midi / 12 - 1
@@ -46,7 +46,7 @@ struct NoteMapper {
 }
 
 private extension Int {
-    func mod(_ n: Int) -> Int {
+    nonisolated func mod(_ n: Int) -> Int {
         let r = self % n
         return r >= 0 ? r : r + n
     }

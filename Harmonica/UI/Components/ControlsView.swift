@@ -23,6 +23,7 @@ struct ControlsView: View {
                     .frame(maxWidth: .infinity, minHeight: usesCompactLayout ? 44 : 50)
             }
             .buttonStyle(StudioControlButtonStyle(isProminent: true, tint: primaryTint))
+            .onboardingCoachTarget(.primaryAction)
 
             if !isFreestyleMode && (isFreestyleSong || canPlaySynthesizedCover) {
                 if canPlayFreestyleAudio {

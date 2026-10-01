@@ -60,7 +60,8 @@ final class FreestyleRecordingStore {
                     audioFileName: nil,
                     notes: recording.notes,
                     duration: recording.duration,
-                    source: recording.source
+                    source: recording.source,
+                    arrangement: recording.arrangement
                 )
 
                 if !withoutAudio.notes.isEmpty {
@@ -116,7 +117,8 @@ final class FreestyleRecordingStore {
             audioFileName: existing.audioFileName,
             notes: existing.notes,
             duration: existing.duration,
-            source: existing.source
+            source: existing.source,
+            arrangement: existing.arrangement
         )
         all[index] = updated
         try writeIndex(all.sorted { $0.createdAt > $1.createdAt })
@@ -143,7 +145,8 @@ final class FreestyleRecordingStore {
             audioFileName: nil,
             notes: existing.notes,
             duration: existing.duration,
-            source: existing.source
+            source: existing.source,
+            arrangement: existing.arrangement
         )
         all[index] = updated
         try writeIndex(all.sorted { $0.createdAt > $1.createdAt })

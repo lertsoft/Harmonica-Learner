@@ -102,11 +102,12 @@ Learners can import and practice any song through four flexible pathways:
 ### On-Device Audio Analysis (`ImportedSongAnalyzer.swift`)
 - When a user imports an audio file, pitch extraction runs **100% locally and privately on-device**:
   - Leverages Apple's `Accelerate` framework (`vDSP` Discrete Fourier Transforms and Hann windowing).
-  - Downsamples audio to 11,025 Hz for efficient spectral analysis.
-  - Slices audio into 8,192-frame analysis windows to capture dominant fundamental frequencies.
-  - Clusters pitch observations into continuous note events and maps them to the nearest playable notes on the chosen harmonica layout (Standard Richter C or Lee Oskar C).
-  - Merges consecutive duplicate notes, discards transient noise bursts, and clamps durations to playable intervals (0.1s–4.0s).
-  - Provides a musical starter phrase fallback if an imported track is highly polyphonic and lacks an isolated lead melody.
+  - Processes the full file at its decoded sample rate with overlapping Hann-windowed FFTs, combining stereo channel energies without phase cancellation.
+  - Estimates up to four simultaneous pitches, suppresses harmonic overtones and rejects low-level/broadband noise.
+  - Retains detected source pitch groups and timestamps, uses one transposition and register for the song, and maps those groups into playable single-hole arpeggios.
+  - Keeps unrounded note timing and rests, slowing only very fast groups to a minimum 80 ms per playable tone.
+  - Saves audio without invented notes when reliable pitches cannot be recovered. Dense full mixes remain approximate.
+  - Streams synthesized covers in bounded buffers rather than dropping detail to satisfy a four-minute allocation limit.
 
 ### Ethical & Compliant Link Transcription Architecture
 - Rather than resorting to illegal streaming audio rippers, fragile YouTube scrapers (`yt-dlp`), or reverse-engineered DRM circumvention, Harmonica Learner establishes an open, licensed backend contract (`Docs/SongLinkTranscription.md`):

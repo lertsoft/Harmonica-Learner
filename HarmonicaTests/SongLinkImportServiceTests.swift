@@ -28,18 +28,40 @@ final class SongLinkImportServiceTests: XCTestCase {
         XCTAssertEqual(descriptor.provider, .web)
     }
 
-    func testBackendEventsAreClampedAndRemappedToSelectedLayout() {
+    func testBackendEventsAreAdaptedWithoutDroppingChromaticNotesOrLongDurations() {
         let events = [
             HarmonicaNoteEvent(note: "C5", duration: 12, hole: "wrong"),
             HarmonicaNoteEvent(note: "C#5", duration: 0.01, hole: "wrong"),
-            HarmonicaNoteEvent(note: "D5", duration: 0.01, hole: "wrong")
+            HarmonicaNoteEvent(note: "D5", duration: 0.1, hole: "wrong")
         ]
 
         let playable = SongLinkImportService.playableEvents(from: events, layout: .diatonicC)
 
-        XCTAssertEqual(playable.map(\.note), ["C5", "D5"])
-        XCTAssertEqual(playable.map(\.hole), ["4B", "4D"])
-        XCTAssertEqual(playable.map(\.duration), [4, 0.1])
+        XCTAssertEqual(playable.map(\.note), ["C5", "C5", "D5"])
+        XCTAssertEqual(playable.map(\.hole), ["4B", "4B", "4D"])
+        for (event, duration) in zip(playable, [12.0, 0.08, 0.1]) {
+            XCTAssertEqual(event.duration, duration, accuracy: 0.00001)
+        }
+    }
+
+    func testTimedServiceChordsAndRestsSurviveArrangement() throws {
+        let events = ["C5", "E5", "G5"].map {
+            HarmonicaNoteEvent(note: $0, duration: 0.6, hole: "ignored", startTime: 0.3)
+        }
+        let arrangement = SongLinkImportService.arrange(events: events, layout: .diatonicC)
+        XCTAssertEqual(arrangement.summary.detectedChordCount, 1)
+        XCTAssertEqual(arrangement.notes.map(\.note), ["C5", "E5", "G5"])
+        XCTAssertEqual(try XCTUnwrap(arrangement.notes.first?.startTime), 0.3, accuracy: 0.001)
+    }
+
+    func testServiceRetainsMoreThan512NotesAndRejectsInvalidNumbers() {
+        var events = (0..<600).map {
+            HarmonicaNoteEvent(note: $0.isMultiple(of: 2) ? "C5" : "D5", duration: 0.1, hole: "ignored")
+        }
+        events.append(HarmonicaNoteEvent(note: "C5", duration: .infinity, hole: "ignored"))
+        events.append(HarmonicaNoteEvent(note: "C5", duration: .nan, hole: "ignored"))
+        let notes = SongLinkImportService.playableEvents(from: events, layout: .diatonicC)
+        XCTAssertEqual(notes.count, 600)
     }
 
     func testProtectedProviderExplainsLicensedServiceRequirementWhenUnconfigured() async throws {

@@ -43,6 +43,8 @@ final class PracticeViewModel: ObservableObject {
     @Published private(set) var isSynthesizedCoverPlaying: Bool = false
     @Published private(set) var freestyleElapsed: TimeInterval = 0
     @Published private(set) var isImportingSong: Bool = false
+    @Published private(set) var lastSuccessfulFreestyleRecordingID: UUID?
+    @Published private(set) var lastSuccessfulSongImportID: UUID?
     @Published private(set) var isRecordingSong: Bool = false
     @Published private(set) var songRecordingElapsed: TimeInterval = 0
     @Published var songLinkErrorMessage: String?
@@ -131,13 +133,9 @@ final class PracticeViewModel: ObservableObject {
         }
     }
 
-    deinit {
-        freestyleTimer?.cancel()
-        songRecordingTimer?.cancel()
-        freestyleTimer = nil
-        cancellables.forEach { $0.cancel() }
-        cancellables.removeAll()
-    }
+    // AnyCancellable cancels when released. All subscriptions capture this model
+    // weakly, so teardown needs no actor-isolated work in a nonisolated deinit.
+    nonisolated deinit {}
 
     var currentSongNotes: [HarmonicaNoteEvent] {
         selectedSong?.notes ?? []
@@ -312,14 +310,15 @@ final class PracticeViewModel: ObservableObject {
         }
     }
 
-    func startFreestyleRecording() throws {
+    @MainActor
+    func startFreestyleRecording() async throws {
         guard !isFreestyleRecording else { return }
 
         let recordingID = UUID()
         let audioFileName = "\(recordingID.uuidString).m4a"
         let audioURL = recordingStore.audioURL(forFileName: audioFileName)
 
-        try audioService.startFreestyleRecording(to: audioURL)
+        try await audioService.startFreestyleRecording(to: audioURL)
 
         freestylePendingRecordingID = recordingID
         freestylePendingAudioFileName = audioFileName
@@ -387,6 +386,7 @@ final class PracticeViewModel: ObservableObject {
         )
 
         try recordingStore.save(recording)
+        lastSuccessfulFreestyleRecordingID = recording.id
         freestyleRecordings = recordingStore.loadAll()
         rebuildMergedSongs(keepCurrentSelection: false)
 
@@ -403,38 +403,41 @@ final class PracticeViewModel: ObservableObject {
         return recording
     }
 
-    func playSelectedFreestyleAudio() throws {
+    @MainActor
+    func playSelectedFreestyleAudio() async throws {
         guard let recording = selectedRecording else { return }
         guard let audioURL = recordingStore.audioURL(for: recording) else {
             scheduleNotice("This freestyle session is notes-only.")
             return
         }
         notePlaybackService.stop()
-        try audioService.playFreestyleAudio(from: audioURL)
+        try await audioService.playFreestyleAudio(from: audioURL)
     }
 
     func stopSelectedFreestyleAudio() {
         audioService.stopFreestyleAudio()
     }
 
-    func playCurrentReferenceNote() throws {
+    @MainActor
+    func playCurrentReferenceNote() async throws {
         guard let event = currentTargetEvent else { return }
         if isFreestylePlayingAudio {
             stopSelectedFreestyleAudio()
         }
-        try notePlaybackService.play(noteName: event.note, duration: event.duration)
+        try await notePlaybackService.play(noteName: event.note, duration: event.duration)
     }
 
     func stopCurrentReferenceNote() {
         notePlaybackService.stop()
     }
 
-    func playSelectedSynthesizedCover() throws {
+    @MainActor
+    func playSelectedSynthesizedCover() async throws {
         guard let selectedSong else { return }
         if isFreestylePlayingAudio {
             stopSelectedFreestyleAudio()
         }
-        try notePlaybackService.play(events: selectedSong.notes)
+        try await notePlaybackService.play(events: selectedSong.notes)
     }
 
     func stopSelectedSynthesizedCover() {
@@ -540,7 +543,8 @@ final class PracticeViewModel: ObservableObject {
                         audioFileName: audioFileName,
                         notes: analysis.notes,
                         duration: analysis.duration,
-                        source: source
+                        source: source,
+                        arrangement: analysis.arrangement
                     )
 
                     do {
@@ -555,11 +559,8 @@ final class PracticeViewModel: ObservableObject {
                         self.rebuildMergedSongs(keepCurrentSelection: false)
                         self.selectedSong = self.songs.first(where: { $0.id == recording.asSong.id })
                         self.isFreestyleMode = false
-                        if analysis.usedFallback {
-                            self.scheduleNotice("Song added with a starter harmonica phrase; the mix had no clear lead pitch.")
-                        } else {
-                            self.scheduleNotice("Song added with \(analysis.notes.count) suggested harmonica notes.")
-                        }
+                        self.lastSuccessfulSongImportID = recording.id
+                        self.scheduleNotice(self.analysisNotice(analysis))
                     } catch {
                         try? FileManager.default.removeItem(at: destinationURL)
                         self.scheduleNotice("Could not save the imported song: \(error.localizedDescription)")
@@ -604,9 +605,12 @@ final class PracticeViewModel: ObservableObject {
         libraryExporter = exporter
 
         exporter.exportAsynchronously { [weak self] in
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
                 defer { try? FileManager.default.removeItem(at: temporaryURL) }
-                guard let self, self.libraryExporter === exporter else { return }
+                // Read the session only on its owning actor. Each export has a
+                // unique destination, which also rejects an obsolete completion.
+                guard let self, let exporter = self.libraryExporter,
+                      exporter.outputURL == temporaryURL else { return }
                 self.libraryExporter = nil
                 self.isImportingSong = false
                 guard exporter.status == .completed else {
@@ -618,7 +622,8 @@ final class PracticeViewModel: ObservableObject {
         }
     }
 
-    func startSongRecording(title: String) throws {
+    @MainActor
+    func startSongRecording(title: String) async throws {
         guard !isRecordingSong, !isImportingSong else { return }
         if isFreestyleRecording {
             _ = try stopFreestyleRecordingAndSave(selectSavedSong: false)
@@ -627,7 +632,15 @@ final class PracticeViewModel: ObservableObject {
         let id = UUID()
         let fileName = "\(id.uuidString).m4a"
         let url = recordingStore.audioURL(forFileName: fileName)
-        try audioService.startSongRecording(to: url)
+        do {
+            try Task.checkCancellation()
+            try await audioService.startSongRecording(to: url)
+            try Task.checkCancellation()
+        } catch {
+            audioService.stopSongRecording()
+            try? FileManager.default.removeItem(at: url)
+            throw error
+        }
 
         songRecordingID = id
         songRecordingAudioFileName = fileName
@@ -702,7 +715,8 @@ final class PracticeViewModel: ObservableObject {
                         audioFileName: fileName,
                         notes: analysis.notes,
                         duration: analysis.duration,
-                        source: .recordedSong
+                        source: .recordedSong,
+                        arrangement: analysis.arrangement
                     )
                     do {
                         try self.recordingStore.save(recording)
@@ -710,10 +724,8 @@ final class PracticeViewModel: ObservableObject {
                         self.rebuildMergedSongs(keepCurrentSelection: false)
                         self.selectedSong = self.songs.first(where: { $0.id == recording.asSong.id })
                         self.isFreestyleMode = false
-                        let detail = analysis.usedFallback
-                            ? "The recording had no clear lead pitch, so a starter phrase was added."
-                            : "Recorded song added with \(analysis.notes.count) suggested harmonica notes."
-                        self.scheduleNotice(detail)
+                        self.lastSuccessfulSongImportID = recording.id
+                        self.scheduleNotice(self.analysisNotice(analysis))
                     } catch {
                         try? FileManager.default.removeItem(at: url)
                         self.scheduleNotice("Could not save the recorded song: \(error.localizedDescription)")
@@ -735,6 +747,13 @@ final class PracticeViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    private func analysisNotice(_ analysis: ImportedSongAnalysis) -> String {
+        if analysis.notes.isEmpty {
+            return "Audio saved. No reliable pitches were recovered; try a clearer recording for harmonica guidance."
+        }
+        return "Added \(analysis.notes.count) playable notes. \(analysis.arrangement.explanation)."
     }
 
     func cancelSongImport() {
@@ -822,14 +841,16 @@ final class PracticeViewModel: ObservableObject {
             layoutRawValue: layout.rawValue,
             audioFileName: nil,
             notes: transcription.notes,
-            duration: transcription.notes.reduce(0) { $0 + $1.duration },
-            source: .linkedSong
+            duration: transcription.notes.map { ($0.startTime ?? 0) + $0.duration }.max() ?? 0,
+            source: .linkedSong,
+            arrangement: transcription.arrangement
         )
         try recordingStore.save(recording)
         freestyleRecordings = recordingStore.loadAll()
         rebuildMergedSongs(keepCurrentSelection: false)
         selectedSong = songs.first(where: { $0.id == recording.asSong.id })
         isFreestyleMode = false
+        lastSuccessfulSongImportID = recording.id
         scheduleNotice("Linked song added with \(recording.notes.count) harmonica notes.")
     }
 

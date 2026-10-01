@@ -26,12 +26,12 @@ This is anative iOS app that helps you learn and practice your harmonica skills.
 - **Device Music Library** — Choose downloaded, unprotected music owned by the user. Apple Music subscription downloads and other DRM-protected items are intentionally rejected because iOS does not expose their audio data.
 - **Record a playing song** — Capture audio through the microphone, then analyze the recording locally into suggested harmonica notes. This works well for a song playing from another device or an acoustic performance.
 - **Song-link entry** — Paste Spotify, YouTube, Apple Music, or direct audio links. Direct audio URLs are downloaded and analyzed locally; protected streaming links are routed through an optional licensed transcription endpoint.
-- **Harmonica suggestions** — The app analyzes dominant pitches and turns them into a compact line of playable harmonica notes with hole and blow/draw guidance.
+- **Harmonica arrangements** — Overlapping spectral windows estimate up to four simultaneous pitches. Melody and chord tones become single-hole notes and arpeggios, with a song-wide transposition and register choice to fit the supported C layouts.
 - **Synthesized cover preview** — Hear the complete suggested line as a newly generated harmonica-like performance; the imported recording is not mixed into the cover.
-- **Full-mix fallback** — If a song has no clear lead pitch, the app supplies a starter harmonica phrase so the song still has useful practice targets.
+- **Honest analysis results** — Original pitch groups, timing, and arrangement changes are saved. If reliable pitches cannot be recovered, the original audio is saved for listening without an invented practice phrase.
 - **Optional listening** — Imported audio is preserved for on-demand playback; practicing the suggested line remains silent by default.
 
-Local file, Music Library, and microphone imports are processed on-device without uploading audio. The microphone captures a nearby speaker or live performance, not another app's internal audio. Analysis uses at most the first three minutes and produces a simplified melody, not full chord transcription; dense mixes may yield an explicitly labeled generic fallback rather than the song's melody. Use recordings you have permission to use; a synthesized cover does not automatically remove composition rights obligations.
+Local file, Music Library, and microphone imports are processed on-device without uploading audio. The microphone captures a nearby speaker or live performance, not another app's internal audio. Analysis covers the full file and retains detected note changes, rests, and unrounded timing. Chord tones are played as arpeggios; very fast groups are slowed enough to play each note. Dense mixes, overlapping harmonics, weak fundamentals, and unavailable accidentals remain approximations, not guaranteed full chord transcription. Cover playback streams the arrangement without the previous four-minute limit. Existing imports keep their saved notes; reimport to use the new analyzer. See [the investigation and validation notes](Docs/ImportedSongArrangement.md). Use recordings you have permission to use; a synthesized cover does not automatically remove composition rights obligations.
 
 Device QA: allow/deny Music Library and microphone permissions; choose a synced unprotected track; confirm cloud/DRM tracks are excluded; cancel an export; record at least one second, stop and analyze, then reopen the saved song and play its preview; discard a recording and confirm no saved entry remains. Media-library and microphone behavior requires a physical-device check.
 
@@ -54,9 +54,9 @@ Includes 7 bundled songs ranging from fundamentals to blues:
 - **Spring animations** — Smooth, physics-based animations throughout (note transitions, success pulses, panel gestures).
 - **Draggable controls panel** — Swipe-down to dismiss the controls panel; tap to bring it back.
 - **Adaptive layouts** — Scroll-safe phone layouts, compact landscape controls, two-column wide-screen practice, and Dynamic Type support keep controls usable without clipping or overlap.
-- **Onboarding flow** — Four first-launch steps cover blow/draw notation, guided practice, song sources, freestyle recording, and microphone access. Practice setup can reopen the tour.
+- **Onboarding flow** — Four first-launch tooltips guide users through the Song Library, harmonica tabs, Practice Style, and Start Practice. Each tooltip uses an anchored caret and consistent primary action, and Practice Setup can reopen the tour.
 - **Music Library trial** — Five successfully saved Music Library songs are included. The fifth opens a full-screen, one-time purchase gate with Restore Purchase. Cancelled or failed imports do not count; deleting a song does not reset the allowance.
-- **Review request** — After a completed guided practice session, StoreKit may ask for an App Store review once per app version, subject to Apple's display limits.
+- **Review request** — A visible review call to action can appear after a saved Freestyle session, a successful song import, or a completed guided practice. Each meaningful success is offered at most once per app version; accepting suppresses later offers for that version, and StoreKit still controls whether the system prompt appears.
 
 ---
 
@@ -128,7 +128,7 @@ xcodebuild test -project Harmonica.xcodeproj -scheme Harmonica \
 node --test Backend/spotify-worker.test.mjs
 ```
 
-Run the UI suite on an iPad simulator as well when changing layout or navigation. Microphone input, Music Library permissions and DRM behavior, and actual audio playback still need physical-device QA. See [Docs/Testing.md](Docs/Testing.md) for the coverage map and commands.
+The microphone UI journey accepts the native permission prompt and verifies start, pause, and restart after reference playback. It needs a simulator with microphone access available; reset a previously denied permission with `xcrun simctl privacy booted reset microphone com.kosukobo.Harmonica`. Run the UI suite on an iPad simulator as well when changing layout or navigation. Microphone input, Music Library permissions and DRM behavior, and actual audio playback still need physical-device QA. See [the compiler and runtime warning investigation](Docs/WarningInvestigation.md) for diagnostic dispositions and validation evidence.
 
 ---
 

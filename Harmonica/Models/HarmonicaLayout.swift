@@ -1,6 +1,6 @@
 import Foundation
 
-enum HarmonicaLayout: String, CaseIterable, Identifiable {
+nonisolated enum HarmonicaLayout: String, CaseIterable, Identifiable {
     case diatonicC = "Diatonic C"
     case leeOskarC = "Lee Oskar C"
 
@@ -37,7 +37,7 @@ enum HarmonicaLayout: String, CaseIterable, Identifiable {
     }()
 
     private static let standardPlayableNotes: [(name: String, midi: Int)] =
-        standardNoteToHole.keys.compactMap { note in
+        standardNoteToHole.keys.sorted().compactMap { note in
             NoteMapper.midiNumber(for: note).map { (note, $0) }
         }
 
@@ -55,11 +55,21 @@ enum HarmonicaLayout: String, CaseIterable, Identifiable {
     }
 
     func nearestPlayableNote(to frequency: Double) -> String? {
-        guard let detected = NoteMapper.pitch(for: frequency),
-              let detectedMIDI = NoteMapper.midiNumber(for: detected.fullName) else { return nil }
+        guard frequency.isFinite, frequency > 0,
+              let detected = NoteMapper.pitch(for: frequency),
+              let midi = NoteMapper.midiNumber(for: detected.fullName) else { return nil }
+        return playableNote(forMIDI: midi)
+    }
 
-        return Self.standardPlayableNotes.min { left, right in
-            abs(left.midi - detectedMIDI) < abs(right.midi - detectedMIDI)
+    /// Preserve pitch class by moving octaves first. Only approximate a semitone when
+    /// that pitch class is unavailable without bends or overblows on this layout.
+    func playableNote(forMIDI midi: Int) -> String? {
+        let candidates = Self.standardPlayableNotes
+        let sameClass = candidates.filter { ($0.midi - midi).isMultiple(of: 12) }
+        return (sameClass.isEmpty ? candidates : sameClass).min { left, right in
+            let leftDistance = abs(left.midi - midi)
+            let rightDistance = abs(right.midi - midi)
+            return leftDistance == rightDistance ? left.midi < right.midi : leftDistance < rightDistance
         }?.name
     }
 }

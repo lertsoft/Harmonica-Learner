@@ -70,8 +70,7 @@
             </BuildableReference>
          </TestableReference>
          <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
+            skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "3C0E00052F39AA1100AB0001"
@@ -103,7 +102,7 @@
          </BuildableReference>
       </BuildableProductRunnable>
       <StoreKitConfigurationFileReference
-         identifier = "../HarmonicaTests/FullAccess.storekit">
+         identifier = "../../HarmonicaTests/FullAccess.storekit">
       </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction

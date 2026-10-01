@@ -34,6 +34,7 @@ struct PitchSample: Equatable {
     static let silence = PitchSample(frequency: 0, amplitude: 0)
 }
 
+@MainActor
 final class AudioEngineService: NSObject, ObservableObject {
     @Published private(set) var pitchSample: PitchSample = .silence
     @Published private(set) var isRunning: Bool = false
@@ -46,6 +47,7 @@ final class AudioEngineService: NSObject, ObservableObject {
     private let updateInterval: TimeInterval = 0.05
     private var lastUpdateTime: TimeInterval = 0
     private var graphConfigured = false
+    private var isStarting = false
 
     private var freestyleRecorder: AVAudioRecorder?
     private var songRecorder: AVAudioRecorder?
@@ -61,9 +63,9 @@ final class AudioEngineService: NSObject, ObservableObject {
         super.init()
     }
 
-    func requestPermission(completion: @escaping (Bool) -> Void) {
-        let handlePermission: (Bool) -> Void = { granted in
-            DispatchQueue.main.async {
+    func requestPermission(completion: @escaping @MainActor @Sendable (Bool) -> Void) {
+        let handlePermission: @Sendable (Bool) -> Void = { granted in
+            Task { @MainActor in
                 completion(granted)
             }
         }
@@ -75,30 +77,36 @@ final class AudioEngineService: NSObject, ObservableObject {
         }
     }
 
-    func start() throws {
+    @MainActor
+    func start() async throws {
+        guard !isRunning, !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
+
+        try await configureAudioSession()
         guard !isRunning else { return }
-        try configureAudioSession()
         if !graphConfigured {
             let outputFormat = engine.avEngine.outputNode.inputFormat(forBus: 0)
-            Settings.audioFormat = outputFormat
             engine.outputAudioFormat = outputFormat
 
             guard let input = engine.input else {
                 throw AudioEngineServiceError.noInputNode
             }
+            // PitchTap derives its sample rate from AudioKit's default settings.
+            // Retain the input mixer's default format so its resampling agrees
+            // with the tracker, including iOS 17's 44.1 kHz default.
             let mixer = Mixer(input)
             mixer.outputFormat = outputFormat
             engine.output = mixer
 
             tracker = PitchTap(input) { [weak self] pitches, amplitudes in
-                guard let self else { return }
                 let now = Date().timeIntervalSinceReferenceDate
-                guard now - self.lastUpdateTime >= self.updateInterval else { return }
-                self.lastUpdateTime = now
-
                 let frequency = Double(pitches.first ?? 0)
                 let amplitude = Double(amplitudes.first ?? 0)
-                DispatchQueue.main.async {
+                Task { @MainActor [weak self] in
+                    guard let self, self.isRunning,
+                          now - self.lastUpdateTime >= self.updateInterval else { return }
+                    self.lastUpdateTime = now
                     self.pitchSample = PitchSample(frequency: frequency, amplitude: amplitude)
                 }
             }
@@ -120,8 +128,11 @@ final class AudioEngineService: NSObject, ObservableObject {
         isRunning = false
     }
 
-    func startFreestyleRecording(to url: URL) throws {
-        try configureAudioSession()
+    @MainActor
+    func startFreestyleRecording(to url: URL) async throws {
+        guard !isRecordingFreestyle else { return }
+        try await configureAudioSession()
+        guard !isRecordingFreestyle else { return }
         stopFreestyleAudio()
 
         let directory = url.deletingLastPathComponent()
@@ -158,12 +169,16 @@ final class AudioEngineService: NSObject, ObservableObject {
         isRecordingFreestyle = false
     }
 
-    func startSongRecording(to url: URL) throws {
+    @MainActor
+    func startSongRecording(to url: URL) async throws {
+        guard !isRecordingSong else { return }
         // Release the live input graph so it cannot monitor microphone audio
         // through the speaker while the song recorder is capturing it.
         stop()
         engine.stop()
-        try configureAudioSession()
+        try await configureAudioSession()
+        try Task.checkCancellation()
+        guard !isRecordingSong else { return }
         stopFreestyleAudio()
 
         let directory = url.deletingLastPathComponent()
@@ -196,13 +211,14 @@ final class AudioEngineService: NSObject, ObservableObject {
         isRecordingSong = false
     }
 
-    func playFreestyleAudio(from url: URL) throws {
+    @MainActor
+    func playFreestyleAudio(from url: URL) async throws {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw AudioEngineServiceError.freestyleAudioFileMissing
         }
 
         stopFreestyleAudio()
-        try AppAudioSession.activate()
+        try await AppAudioSession.activate()
 
         let player = try AVAudioPlayer(contentsOf: url)
         player.delegate = self
@@ -228,13 +244,8 @@ final class AudioEngineService: NSObject, ObservableObject {
         isPlayingFreestyleAudio = false
     }
 
-    private func configureAudioSession() throws {
-        let session = AVAudioSession.sharedInstance()
-        try AppAudioSession.activate()
-        _ = try? session.setPreferredInputNumberOfChannels(1)
-        _ = try? session.setPreferredOutputNumberOfChannels(2)
-        _ = try? session.setPreferredSampleRate(48_000)
-        _ = try? session.setPreferredIOBufferDuration(0.01)
+    private func configureAudioSession() async throws {
+        try await AppAudioSession.activate(configureInput: true)
     }
 
     private func logAudioFormats(input: Node) {
@@ -243,7 +254,7 @@ final class AudioEngineService: NSObject, ObservableObject {
         let outputFormat = engine.output?.avAudioNode.outputFormat(forBus: 0)
         let outputNodeInput = engine.avEngine.outputNode.inputFormat(forBus: 0)
         let outputNodeOutput = engine.avEngine.outputNode.outputFormat(forBus: 0)
-        print("AudioSession sampleRate=\(session.sampleRate) inputChannels=\(inputFormat.channelCount) inputInterleaved=\(inputFormat.isInterleaved) outputChannels=\(outputFormat?.channelCount ?? 0) outputInterleaved=\(outputFormat?.isInterleaved ?? false)")
+        print("AudioSession sampleRate=\(session.sampleRate) trackerSampleRate=\(input.avAudioNode.outputFormat(forBus: 0).sampleRate) inputChannels=\(inputFormat.channelCount) inputInterleaved=\(inputFormat.isInterleaved) outputChannels=\(outputFormat?.channelCount ?? 0) outputInterleaved=\(outputFormat?.isInterleaved ?? false)")
         print("OutputNode inputChannels=\(outputNodeInput.channelCount) inputInterleaved=\(outputNodeInput.isInterleaved) outputChannels=\(outputNodeOutput.channelCount) outputInterleaved=\(outputNodeOutput.isInterleaved)")
     }
 }

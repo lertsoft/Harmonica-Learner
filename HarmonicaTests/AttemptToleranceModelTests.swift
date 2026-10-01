@@ -1,6 +1,7 @@
 import XCTest
 @testable import Harmonica
 
+@MainActor
 final class AttemptToleranceModelTests: XCTestCase {
     func testToleranceStartsAtStartCents() {
         let model = AttemptToleranceModel(startCents: 30, targetCents: 15, attemptsToTarget: 20)

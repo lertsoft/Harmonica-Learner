@@ -6,17 +6,17 @@ final class PracticeViewModelTests: XCTestCase {
     private var store: FreestyleRecordingStore!
     private var storeDirectory: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         storeDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("PracticeViewModelTests-\(UUID().uuidString)")
         store = FreestyleRecordingStore(documentsDirectoryURL: storeDirectory)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: storeDirectory)
         store = nil
         storeDirectory = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testHandleFrequencyWithoutSignalResetsDetectedPitchAndMatchState() {

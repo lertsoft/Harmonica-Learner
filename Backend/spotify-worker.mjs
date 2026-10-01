@@ -1,17 +1,5 @@
-const NOTE_FOR_PITCH_CLASS = [
-  ["C5", "4B"],
-  ["C5", "4B"],
-  ["D5", "4D"],
-  ["E5", "5B"],
-  ["E5", "5B"],
-  ["F5", "5D"],
-  ["G5", "6B"],
-  ["G5", "6B"],
-  ["A5", "6D"],
-  ["A5", "6D"],
-  ["B5", "7D"],
-  ["B5", "7D"],
-];
+const PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const NATURAL_HOLES = { C5: "4B", D5: "4D", E5: "5B", F5: "5D", G5: "6B", A5: "6D", B5: "7D" };
 
 export function extractSpotifyTrackID(value) {
   let url;
@@ -27,33 +15,37 @@ export function extractSpotifyTrackID(value) {
   return id && /^[A-Za-z0-9]{10,32}$/.test(id) ? id : null;
 }
 
-export function mapSpotifyAnalysisToNotes(analysis, maximumNotes = 512) {
+// Chroma supplies pitch classes, not octave-resolved notes or verified chord labels.
+// Retain strong classes and timing so the client can arrange them consistently.
+export function mapSpotifyAnalysisToNotes(analysis) {
   const runs = [];
+  let cursor = 0;
   for (const segment of analysis?.segments ?? []) {
+    const duration = Number(segment.duration);
+    if (!Number.isFinite(duration) || duration <= 0) continue;
+    const startTime = Number.isFinite(segment.start) && segment.start >= 0 ? segment.start : cursor;
+    cursor = startTime + duration;
     const pitches = segment.pitches;
-    if (!Array.isArray(pitches) || pitches.length !== 12) continue;
+    if (!Array.isArray(pitches) || pitches.length !== 12 || pitches.some((pitch) => !Number.isFinite(pitch))) continue;
     if ((segment.confidence ?? 0) < 0.2 || (segment.loudness_max ?? -60) < -45) continue;
-
-    let pitchClass = 0;
-    for (let index = 1; index < pitches.length; index += 1) {
-      if (pitches[index] > pitches[pitchClass]) pitchClass = index;
-    }
-    if (!Number.isFinite(pitches[pitchClass]) || pitches[pitchClass] < 0.35) continue;
-
-    const [note, hole] = NOTE_FOR_PITCH_CLASS[pitchClass];
-    const duration = Math.min(2, Math.max(0.1, Number(segment.duration) || 0.1));
+    const strongest = Math.max(...pitches);
+    if (strongest < 0.35) continue;
+    const classes = pitches.map((strength, index) => ({ strength, index }))
+      .filter(({ strength }) => strength >= Math.max(0.35, strongest * 0.55))
+      .sort((a, b) => b.strength - a.strength).slice(0, 4)
+      .map(({ index }) => index).sort((a, b) => a - b);
+    const sourceNotes = classes.map((index) => `${PITCH_NAMES[index]}5`);
+    if (!sourceNotes.length) continue;
+    const note = sourceNotes[0];
     const last = runs.at(-1);
-    if (last?.note === note && last.duration < 4) {
-      last.duration = Math.min(4, last.duration + duration);
+    if (last && last.sourceNotes.join(",") === sourceNotes.join(",")
+        && Math.abs(last.startTime + last.duration - startTime) < 0.00001) {
+      last.duration += duration;
     } else {
-      runs.push({ note, duration, hole });
+      runs.push({ note, duration, hole: NATURAL_HOLES[note] ?? "", startTime, sourceNotes });
     }
   }
-
-  const stable = runs.filter((event) => event.duration >= 0.12);
-  if (stable.length <= maximumNotes) return stable;
-  const stride = stable.length / maximumNotes;
-  return Array.from({ length: maximumNotes }, (_, index) => stable[Math.floor(index * stride)]);
+  return runs;
 }
 
 async function spotifyToken(env) {

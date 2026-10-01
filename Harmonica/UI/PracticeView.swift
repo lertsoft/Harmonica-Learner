@@ -13,7 +13,11 @@ struct PracticeView: View {
     @AppStorage("practice.selectedSongID") private var storedSelectedSongID = ""
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.requestReview) private var requestReview
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("practice.reviewPromptedVersion") private var reviewPromptedVersion = ""
+    @AppStorage("practice.reviewFreestyleOfferedVersion") private var reviewFreestyleOfferedVersion = ""
+    @AppStorage("practice.reviewImportOfferedVersion") private var reviewImportOfferedVersion = ""
+    @AppStorage("practice.reviewGuidedOfferedVersion") private var reviewGuidedOfferedVersion = ""
 
     @State private var showOnboarding = false
     @State private var onboardingStep = 0
@@ -30,9 +34,12 @@ struct PracticeView: View {
     @State private var songLinkText = ""
     @State private var renameText = ""
     @State private var recordedSongTitle = ""
+    @State private var isStartingSongRecording = false
+    @State private var songRecordingStartTask: Task<Void, Never>?
     @State private var showSetupSheet = false
     @State private var lastMissHapticDate = Date.distantPast
     @State private var hasRestoredPreferences = false
+    @State private var reviewPromptMoment: ReviewPromptMoment?
 
     private var isPurchaseRequired: Bool {
         viewModel.successfulMusicLibraryImports >= LibraryImportAllowance.freeSongCount
@@ -45,6 +52,9 @@ struct PracticeView: View {
                 restorePreferencesIfNeeded()
                 showOnboarding = !hasSeenOnboarding
                 viewModel.hasFullAccess = fullAccessStore.hasFullAccess
+                #if DEBUG
+                UITestFixtures.importChordIfRequested(into: viewModel)
+                #endif
             }
             .onChange(of: fullAccessStore.hasFullAccess) { _, unlocked in
                 viewModel.hasFullAccess = unlocked
@@ -60,6 +70,14 @@ struct PracticeView: View {
             }
             .onChange(of: viewModel.isPracticeComplete) { _, completed in
                 promptForReviewIfAppropriate(completed: completed)
+            }
+            .onChange(of: viewModel.lastSuccessfulSongImportID) { _, importID in
+                guard importID != nil else { return }
+                queueReviewPrompt(for: .songImport)
+            }
+            .onChange(of: viewModel.lastSuccessfulFreestyleRecordingID) { _, recordingID in
+                guard recordingID != nil else { return }
+                queueReviewPrompt(for: .freestyle)
             }
     }
 
@@ -90,10 +108,6 @@ struct PracticeView: View {
                 }
                 .accessibilityHidden(showOnboarding || viewModel.isImportingSong || isPurchaseRequired)
 
-                if showOnboarding && !isPurchaseRequired {
-                    onboardingOverlay
-                }
-
                 if viewModel.isImportingSong && !isPurchaseRequired {
                     importingOverlay
                 }
@@ -102,6 +116,17 @@ struct PracticeView: View {
                     purchaseOverlay
                 }
             }
+            .overlayPreferenceValue(OnboardingCoachTargetKey.self) { targets in
+                GeometryReader { overlayProxy in
+                    if showOnboarding && !isPurchaseRequired {
+                        onboardingOverlay(
+                            targetFrame: targets[currentOnboardingTarget].map { overlayProxy[$0] }
+                        )
+                        .transition(.opacity)
+                    }
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: onboardingStep)
         }
         .onChange(of: viewModel.matchState) { oldValue, newValue in
             if newValue == .hit && oldValue != .hit {
@@ -170,15 +195,27 @@ struct PracticeView: View {
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $isSongRecorderPresented, onDismiss: {
+            cancelPendingSongRecordingStart()
             if viewModel.isRecordingSong {
                 viewModel.cancelSongRecording()
             }
         }) {
             songRecorderSheet
-                .interactiveDismissDisabled(viewModel.isRecordingSong)
+                .interactiveDismissDisabled(viewModel.isRecordingSong || isStartingSongRecording)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
+        }
+        .sheet(item: $reviewPromptMoment) { moment in
+            ReviewCallToActionSheet(
+                moment: moment,
+                onReview: { requestAppStoreReview(from: moment) },
+                onNotNow: { reviewPromptMoment = nil }
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.ultraThinMaterial)
+            .interactiveDismissDisabled()
         }
         .alert("Harmonica Learner", isPresented: $showMicAlert) {
             Button("Open Settings") {
@@ -334,6 +371,9 @@ struct PracticeView: View {
         TargetNoteView(
             targetNote: viewModel.currentTargetNote,
             targetHole: viewModel.currentTargetHole,
+            sourceNotes: viewModel.currentTargetEvent?.sourceNotes,
+            arrangementExplanation: viewModel.selectedRecording?.notes.isEmpty == true
+                ? "Audio saved • No reliable pitches recovered" : viewModel.selectedRecording?.arrangement?.explanation,
             detectedPitch: viewModel.detectedPitch,
             matchState: viewModel.matchState,
             isAudioRunning: viewModel.isAudioRunning,
@@ -415,7 +455,7 @@ struct PracticeView: View {
                 Text("Finding a playable harmonica line…")
                     .font(AppTypography.bodyStrong)
                     .foregroundStyle(AppColors.textPrimary)
-                Text("The result is a practice suggestion, especially for full-band mixes.")
+                Text("Melody and chord tones become a playable arrangement. Dense mixes may be less accurate.")
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.textSecondary)
                     .multilineTextAlignment(.center)
@@ -437,15 +477,22 @@ struct PracticeView: View {
         ScrollView {
         VStack(spacing: 18) {
             VStack(spacing: 6) {
-                Image(systemName: viewModel.isRecordingSong ? "waveform.circle.fill" : "mic.circle.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(viewModel.isRecordingSong ? AppColors.missGradientStart : AppColors.primaryGradientStart)
-                Text(viewModel.isRecordingSong ? "Recording the song…" : "Record a Playing Song")
+                if isStartingSongRecording {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(AppColors.primaryGradientStart)
+                        .frame(width: 48, height: 48)
+                } else {
+                    Image(systemName: viewModel.isRecordingSong ? "waveform.circle.fill" : "mic.circle.fill")
+                        .font(.system(size: 48))
+                        .foregroundStyle(viewModel.isRecordingSong ? AppColors.missGradientStart : AppColors.primaryGradientStart)
+                }
+                Text(isStartingSongRecording ? "Preparing the recorder…" : (viewModel.isRecordingSong ? "Recording the song…" : "Record a Playing Song"))
                     .font(AppTypography.title)
                     .foregroundStyle(AppColors.textPrimary)
                 Text(viewModel.isRecordingSong
-                     ? "Play the song near this device. Only the first three minutes are analyzed; a short, clear melody works best."
-                     : "Play a song on another device or perform nearby. Audio stays on this device and becomes approximate melody guidance, not full chords. Other apps’ internal audio is not captured.")
+                     ? "Play the song near this device. The full recording is analyzed; clearer audio gives better note and chord estimates."
+                     : "Play a song on another device or perform nearby. Audio stays on this device and becomes an approximate harmonica arrangement with chord tones played in sequence. Other apps’ internal audio is not captured.")
                     .font(AppTypography.caption)
                     .foregroundStyle(AppColors.textSecondary)
                     .multilineTextAlignment(.center)
@@ -453,7 +500,7 @@ struct PracticeView: View {
 
             TextField("Song name (optional)", text: $recordedSongTitle)
                 .textFieldStyle(.roundedBorder)
-                .disabled(viewModel.isRecordingSong)
+                .disabled(viewModel.isRecordingSong || isStartingSongRecording)
 
             Text(formattedElapsed(viewModel.songRecordingElapsed))
                 .font(AppTypography.mono.monospacedDigit())
@@ -467,6 +514,7 @@ struct PracticeView: View {
                     .frame(maxWidth: .infinity, minHeight: 46)
             }
             .buttonStyle(StudioControlButtonStyle(isProminent: true, tint: viewModel.isRecordingSong ? AppGradients.miss : AppGradients.primary))
+            .disabled(isStartingSongRecording)
 
             if viewModel.isRecordingSong {
                 Button("Discard Recording", role: .destructive) {
@@ -474,7 +522,10 @@ struct PracticeView: View {
                     isSongRecorderPresented = false
                 }
             } else {
-                Button("Cancel", role: .cancel) { isSongRecorderPresented = false }
+                Button("Cancel", role: .cancel) {
+                    cancelPendingSongRecordingStart()
+                    isSongRecorderPresented = false
+                }
                     .foregroundStyle(AppColors.textSecondary)
             }
         }
@@ -505,112 +556,24 @@ struct PracticeView: View {
         .accessibilityLabel("Notice: \(message)")
     }
 
-    private var onboardingOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.52)
-                .ignoresSafeArea()
-
-            ViewThatFits(in: .vertical) {
-                onboardingCard
-
-                ScrollView {
-                    onboardingCard
-                        .padding(.vertical, 12)
-                }
-                .scrollIndicators(.hidden)
-            }
-            .frame(maxWidth: 560)
-            .padding(.horizontal, 22)
-            .padding(.vertical, 16)
-        }
-    }
-
-    private var onboardingCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("HARMONICA LEARNER")
-                    .font(AppTypography.sectionLabel)
-                    .tracking(2)
-                    .foregroundStyle(AppColors.cyanAccent)
-                Spacer()
-                Text("\(onboardingStep + 1) / 4")
-                    .font(AppTypography.mono)
-                    .foregroundStyle(AppColors.textSecondary)
-            }
-
-            Image(systemName: onboardingPage.icon)
-                .font(.system(size: 40, weight: .light))
-                .foregroundStyle(AppColors.cyanAccent)
-                .frame(maxWidth: .infinity, minHeight: 82)
-                .accessibilityHidden(true)
-
-            Text(onboardingPage.title)
-                .font(AppTypography.title)
-                .foregroundStyle(AppColors.textPrimary)
-
-            Text(onboardingPage.description)
-                .font(AppTypography.body)
-                .foregroundStyle(AppColors.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(onboardingPage.tips, id: \.self) { tip in
-                    onboardingRow(icon: "checkmark.circle.fill", text: tip)
-                }
-            }
-
-            HStack(spacing: 6) {
-                ForEach(0..<4) { index in
-                    Capsule()
-                        .fill(index == onboardingStep ? AppColors.cyanAccent : AppColors.glassBorder)
-                        .frame(height: 4)
-                }
-            }
-            .accessibilityHidden(true)
-
-            Button {
-                if onboardingStep < 3 {
-                    onboardingStep += 1
-                } else {
-                    requestMicPermissionFromOnboarding()
-                }
-            } label: {
-                Text(onboardingStep == 3 ? "Enable Microphone & Start" : "Continue")
-                    .frame(maxWidth: .infinity, minHeight: 46)
-            }
-            .buttonStyle(StudioControlButtonStyle(isProminent: true, tint: AppGradients.primary))
-
-            HStack {
-                if onboardingStep > 0 {
-                    Button("Back") { onboardingStep -= 1 }
-                }
-                Spacer()
-                if onboardingStep == 3 {
-                    Button("Explore Without Microphone") {
-                        hasSeenOnboarding = true
-                        showOnboarding = false
-                    }
-                }
-            }
-            .font(AppTypography.caption)
-            .foregroundStyle(AppColors.textSecondary)
-            .frame(minHeight: 44)
-        }
-        .padding(18)
-        .liquidGlass(cornerRadius: 20, intensity: 0.04)
-    }
-
-    private var onboardingPage: (icon: String, title: String, description: String, tips: [String]) {
+    private var currentOnboardingTarget: OnboardingCoachTarget {
         switch onboardingStep {
-        case 0:
-            return ("mouth", "Learn the breath pattern", "Use a C diatonic harmonica. Each target shows a hole and a direction: blow sends air out, draw pulls air in.", ["+4 means blow into hole 4", "−4 means draw through hole 4"])
-        case 1:
-            return ("waveform.path", "Listen, match, move", "Choose a song from Practice Library, start listening, and hold the target note steadily. The app advances after you match it.", ["Watch the pitch feedback while you play", "Use Skip or Retry whenever you need"])
-        case 2:
-            return ("music.note.list", "Build your practice library", "Add audio from Files, a local Music Library track, a nearby recording, or a supported link. The app turns audio into approximate, playable note suggestions.", ["Five successful Music Library imports are included", "A one-time purchase unlocks the app after the fifth"])
-        default:
-            return ("mic", "Make practice your own", "Switch to Freestyle to record what you play. Save a session, hear it back, or practice its notes in Guided mode. Setup holds tuning, sensitivity, and Call & Response.", ["Your local audio is processed on this device", "Microphone access is needed only for listening and recording"])
+        case 0: return .songLibrary
+        case 1: return .targetNote
+        case 2: return .practiceStyle
+        default: return .primaryAction
         }
+    }
+
+    private func onboardingOverlay(targetFrame: CGRect?) -> some View {
+        OnboardingCoachOverlay(
+            stepIndex: onboardingStep,
+            targetFrame: targetFrame,
+            onBack: { onboardingStep = max(0, onboardingStep - 1) },
+            onNext: { onboardingStep = min(3, onboardingStep + 1) },
+            onFinishWithMicrophone: requestMicPermissionFromOnboarding,
+            onFinishWithoutMicrophone: finishOnboardingWithoutMicrophone
+        )
     }
 
     private var purchaseOverlay: some View {
@@ -757,16 +720,23 @@ struct PracticeView: View {
                 return
             }
 
-            do {
-                try viewModel.audioService.start()
-                hasSeenOnboarding = true
-                showOnboarding = false
-                playCallAndResponseReferenceIfNeeded()
-            } catch {
-                micAlertMessage = "Could not start audio input: \(error.localizedDescription)"
-                showMicAlert = true
+            Task { @MainActor in
+                do {
+                    try await viewModel.audioService.start()
+                    hasSeenOnboarding = true
+                    showOnboarding = false
+                    playCallAndResponseReferenceIfNeeded()
+                } catch {
+                    micAlertMessage = "Could not start audio input: \(error.localizedDescription)"
+                    showMicAlert = true
+                }
             }
         }
+    }
+
+    private func finishOnboardingWithoutMicrophone() {
+        hasSeenOnboarding = true
+        showOnboarding = false
     }
 
     private func handleAudioToggle(autoHideOnStart: Bool = false) {
@@ -782,12 +752,14 @@ struct PracticeView: View {
                 return
             }
 
-            do {
-                try viewModel.audioService.start()
-                if autoHideOnStart { playCallAndResponseReferenceIfNeeded() }
-            } catch {
-                micAlertMessage = "Could not start audio input: \(error.localizedDescription)"
-                showMicAlert = true
+            Task { @MainActor in
+                do {
+                    try await viewModel.audioService.start()
+                    if autoHideOnStart { playCallAndResponseReferenceIfNeeded() }
+                } catch {
+                    micAlertMessage = "Could not start audio input: \(error.localizedDescription)"
+                    showMicAlert = true
+                }
             }
         }
     }
@@ -827,7 +799,7 @@ struct PracticeView: View {
 
         ensureAudioReady {
             do {
-                try viewModel.startFreestyleRecording()
+                try await viewModel.startFreestyleRecording()
             } catch {
                 micAlertMessage = "Could not start freestyle recording: \(error.localizedDescription)"
                 showMicAlert = true
@@ -852,17 +824,68 @@ struct PracticeView: View {
 
     private func promptForReviewIfAppropriate(completed: Bool) {
         guard completed, !isPurchaseRequired, !showOnboarding else { return }
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        guard reviewPromptedVersion != version else { return }
+        queueReviewPrompt(for: .guidedPractice, delay: .seconds(2))
+    }
+
+    private var currentAppVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+    }
+
+    private func queueReviewPrompt(
+        for moment: ReviewPromptMoment,
+        delay: Duration = .milliseconds(650)
+    ) {
+        let version = currentAppVersion
+        guard reviewPromptedVersion != version,
+              offeredReviewVersion(for: moment) != version,
+              reviewPromptMoment == nil,
+              !isPurchaseRequired else { return }
+
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            guard !isPurchaseRequired, !showOnboarding, viewModel.isPracticeComplete else { return }
-            reviewPromptedVersion = version
+            try? await Task.sleep(for: delay)
+            guard scenePhase == .active,
+                  reviewPromptedVersion != version,
+                  offeredReviewVersion(for: moment) != version,
+                  reviewPromptMoment == nil,
+                  !showOnboarding,
+                  !isPurchaseRequired else { return }
+            markReviewOffered(moment, version: version)
+            reviewPromptMoment = moment
+        }
+    }
+
+    private func requestAppStoreReview(from moment: ReviewPromptMoment) {
+        let version = currentAppVersion
+        markReviewOffered(moment, version: version)
+        reviewPromptedVersion = version
+        reviewPromptMoment = nil
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard scenePhase == .active, !isPurchaseRequired, !showOnboarding else { return }
             requestReview()
         }
     }
 
+    private func offeredReviewVersion(for moment: ReviewPromptMoment) -> String {
+        switch moment {
+        case .freestyle: reviewFreestyleOfferedVersion
+        case .songImport: reviewImportOfferedVersion
+        case .guidedPractice: reviewGuidedOfferedVersion
+        }
+    }
+
+    private func markReviewOffered(_ moment: ReviewPromptMoment, version: String) {
+        switch moment {
+        case .freestyle: reviewFreestyleOfferedVersion = version
+        case .songImport: reviewImportOfferedVersion = version
+        case .guidedPractice: reviewGuidedOfferedVersion = version
+        }
+    }
+
     private func handleSongRecordingToggle() {
+        guard !isStartingSongRecording else { return }
+
         if viewModel.isRecordingSong {
             do {
                 try viewModel.stopSongRecordingAndAnalyze()
@@ -874,20 +897,47 @@ struct PracticeView: View {
             return
         }
 
+        isStartingSongRecording = true
         viewModel.audioService.requestPermission { granted in
-            guard isSongRecorderPresented else { return }
+            guard isSongRecorderPresented else {
+                isStartingSongRecording = false
+                return
+            }
             guard granted else {
+                isStartingSongRecording = false
                 micAlertMessage = "Microphone access is required to record a playing song. Enable it in Settings."
                 showMicAlert = true
                 return
             }
-            do {
-                try viewModel.startSongRecording(title: recordedSongTitle)
-            } catch {
-                micAlertMessage = "Could not start song recording: \(error.localizedDescription)"
-                showMicAlert = true
+            songRecordingStartTask = Task { @MainActor in
+                defer {
+                    isStartingSongRecording = false
+                    songRecordingStartTask = nil
+                }
+                do {
+                    try Task.checkCancellation()
+                    try await viewModel.startSongRecording(title: recordedSongTitle)
+                    try Task.checkCancellation()
+                    guard isSongRecorderPresented else {
+                        viewModel.cancelSongRecording()
+                        return
+                    }
+                } catch is CancellationError {
+                    if viewModel.isRecordingSong {
+                        viewModel.cancelSongRecording()
+                    }
+                } catch {
+                    micAlertMessage = "Could not start song recording: \(error.localizedDescription)"
+                    showMicAlert = true
+                }
             }
         }
+    }
+
+    private func cancelPendingSongRecordingStart() {
+        songRecordingStartTask?.cancel()
+        songRecordingStartTask = nil
+        isStartingSongRecording = false
     }
 
     private func handleFreestylePlaybackToggle() {
@@ -896,11 +946,13 @@ struct PracticeView: View {
             return
         }
 
-        do {
-            try viewModel.playSelectedFreestyleAudio()
-        } catch {
-            micAlertMessage = "Could not play recording: \(error.localizedDescription)"
-            showMicAlert = true
+        Task { @MainActor in
+            do {
+                try await viewModel.playSelectedFreestyleAudio()
+            } catch {
+                micAlertMessage = "Could not play recording: \(error.localizedDescription)"
+                showMicAlert = true
+            }
         }
     }
 
@@ -910,11 +962,13 @@ struct PracticeView: View {
             return
         }
 
-        do {
-            try viewModel.playCurrentReferenceNote()
-        } catch {
-            micAlertMessage = "Could not play the reference note: \(error.localizedDescription)"
-            showMicAlert = true
+        Task { @MainActor in
+            do {
+                try await viewModel.playCurrentReferenceNote()
+            } catch {
+                micAlertMessage = "Could not play the reference note: \(error.localizedDescription)"
+                showMicAlert = true
+            }
         }
     }
 
@@ -924,11 +978,13 @@ struct PracticeView: View {
             return
         }
 
-        do {
-            try viewModel.playSelectedSynthesizedCover()
-        } catch {
-            micAlertMessage = "Could not play the harmonica cover: \(error.localizedDescription)"
-            showMicAlert = true
+        Task { @MainActor in
+            do {
+                try await viewModel.playSelectedSynthesizedCover()
+            } catch {
+                micAlertMessage = "Could not play the harmonica cover: \(error.localizedDescription)"
+                showMicAlert = true
+            }
         }
     }
 
@@ -961,9 +1017,9 @@ struct PracticeView: View {
         showRemoveAudioConfirm = true
     }
 
-    private func ensureAudioReady(onReady: @escaping () -> Void) {
+    private func ensureAudioReady(onReady: @escaping @MainActor () async -> Void) {
         if viewModel.isAudioRunning {
-            onReady()
+            Task { @MainActor in await onReady() }
             return
         }
 
@@ -974,12 +1030,14 @@ struct PracticeView: View {
                 return
             }
 
-            do {
-                try viewModel.audioService.start()
-                onReady()
-            } catch {
-                micAlertMessage = "Could not start audio input: \(error.localizedDescription)"
-                showMicAlert = true
+            Task { @MainActor in
+                do {
+                    try await viewModel.audioService.start()
+                    await onReady()
+                } catch {
+                    micAlertMessage = "Could not start audio input: \(error.localizedDescription)"
+                    showMicAlert = true
+                }
             }
         }
     }
@@ -993,10 +1051,11 @@ struct PracticeView: View {
     private func playCallAndResponseReferenceIfNeeded() {
         guard callAndResponseEnabled, viewModel.isAudioRunning,
               !viewModel.isFreestyleMode, !viewModel.isPracticeComplete else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
             guard callAndResponseEnabled, viewModel.isAudioRunning,
                   !viewModel.isPracticeComplete else { return }
-            try? viewModel.playCurrentReferenceNote()
+            try? await viewModel.playCurrentReferenceNote()
         }
     }
 
@@ -1020,7 +1079,7 @@ struct PracticeView: View {
         }
     }
 
-    private func presentAfterAddSheet(_ presentation: @escaping () -> Void) {
+    private func presentAfterAddSheet(_ presentation: @escaping @MainActor @Sendable () -> Void) {
         showAddSongOptions = false
         DispatchQueue.main.async(execute: presentation)
     }
@@ -1046,6 +1105,99 @@ struct PracticeView: View {
         case .idle:
             break
         }
+    }
+}
+
+private enum ReviewPromptMoment: String, Identifiable {
+    case freestyle
+    case songImport
+    case guidedPractice
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .freestyle: "waveform"
+        case .songImport: "music.note.list"
+        case .guidedPractice: "checkmark.circle.fill"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .freestyle: "Enjoying Freestyle?"
+        case .songImport: "Your song is ready"
+        case .guidedPractice: "Nice practice session"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .freestyle:
+            "If capturing your own playing feels useful, share a quick review on the App Store."
+        case .songImport:
+            "If adding your own music makes practice better, tell other learners in a quick review."
+        case .guidedPractice:
+            "If Harmonica Learner is helping you improve, a quick review would mean a lot."
+        }
+    }
+}
+
+private struct ReviewCallToActionSheet: View {
+    let moment: ReviewPromptMoment
+    let onReview: () -> Void
+    let onNotNow: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                Image(systemName: moment.icon)
+                    .font(.system(size: 42, weight: .semibold))
+                    .foregroundStyle(AppColors.cyanAccent)
+                    .frame(width: 76, height: 76)
+                    .background(Circle().fill(Color.white.opacity(0.08)))
+                    .accessibilityHidden(true)
+
+                VStack(spacing: 8) {
+                    Text("ENJOYING HARMONICA LEARNER?")
+                        .font(AppTypography.sectionLabel)
+                        .foregroundStyle(AppColors.cyanAccent)
+                        .multilineTextAlignment(.center)
+
+                    Text(moment.title)
+                        .font(AppTypography.title)
+                        .foregroundStyle(AppColors.textPrimary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(moment.message)
+                        .font(AppTypography.body)
+                        .foregroundStyle(AppColors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button(action: onReview) {
+                    Label("Review Harmonica", systemImage: "star.fill")
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                }
+                .buttonStyle(StudioControlButtonStyle(isProminent: true, tint: AppGradients.primary))
+                .accessibilityIdentifier("reviewAppButton")
+
+                Button("Not Now", action: onNotNow)
+                    .font(AppTypography.bodyStrong)
+                    .foregroundStyle(AppColors.textSecondary)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("reviewNotNowButton")
+            }
+            .frame(maxWidth: 520)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 32)
+        }
+        .background(AppColors.backgroundDeep.ignoresSafeArea())
+        .accessibilityAddTraits(.isModal)
     }
 }
 

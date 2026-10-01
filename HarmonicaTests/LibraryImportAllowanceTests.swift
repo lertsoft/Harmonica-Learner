@@ -1,6 +1,7 @@
 import XCTest
 @testable import Harmonica
 
+@MainActor
 final class LibraryImportAllowanceTests: XCTestCase {
     func testCountsOnlySuccessfulImportsAndPreservesLimitAfterDeletion() throws {
         let suite = "LibraryImportAllowanceTests.\(UUID().uuidString)"

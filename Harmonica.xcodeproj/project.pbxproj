@@ -189,6 +189,10 @@
 		1A9DBAFC2F32E66200D2751C /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
+				3C0E00052F39AA1100AB0001 = {
+					CreatedOnToolsVersion = 26.2;
+					TestTargetID = 1A9DBB032F32E66200D2751C;
+				};
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
@@ -196,14 +200,10 @@
 					1A9DBB032F32E66200D2751C = {
 						CreatedOnToolsVersion = 26.2;
 					};
-				2B8F8A4A2F39AA1100AB0001 = {
+					2B8F8A4A2F39AA1100AB0001 = {
 						CreatedOnToolsVersion = 26.2;
 						TestTargetID = 1A9DBB032F32E66200D2751C;
 					};
-				};
-				3C0E00052F39AA1100AB0001 = {
-					CreatedOnToolsVersion = 26.2;
-					TestTargetID = 1A9DBB032F32E66200D2751C;
 				};
 			};
 			buildConfigurationList = 1A9DBAFF2F32E66200D2751C /* Build configuration list for PBXProject "Harmonica" */;
@@ -456,6 +456,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
@@ -505,6 +506,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";

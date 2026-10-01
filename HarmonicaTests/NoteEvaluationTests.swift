@@ -1,6 +1,7 @@
 import XCTest
 @testable import Harmonica
 
+@MainActor
 final class NoteEvaluationTests: XCTestCase {
     private let model = AttemptToleranceModel(startCents: 30, targetCents: 10, attemptsToTarget: 2)
 

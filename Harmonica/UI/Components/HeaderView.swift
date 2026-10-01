@@ -11,7 +11,7 @@ struct HeaderView: View {
     let onToggleFreestyleMode: () -> Void
     let onSelectSong: (HarmonicaSong) -> Void
     let onShowSetup: () -> Void
-    let onAddSong: () -> Void
+    let onAddSong: @MainActor @Sendable () -> Void
     let onRenameSong: (HarmonicaSong) -> Void
     let onDeleteSong: (HarmonicaSong) -> Void
 
@@ -101,6 +101,7 @@ struct HeaderView: View {
         }
         .pickerStyle(.segmented)
         .accessibilityHint("Switches between song practice and free recording")
+        .onboardingCoachTarget(.practiceStyle)
     }
 
     private var contextSummary: some View {
@@ -131,6 +132,7 @@ struct HeaderView: View {
         .buttonStyle(.plain)
         .foregroundStyle(AppColors.textPrimary)
         .accessibilityLabel("Practice library")
+        .onboardingCoachTarget(.songLibrary)
     }
 
     private var librarySheet: some View {
@@ -171,7 +173,7 @@ struct HeaderView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(displayName(for: song))
-                                Text("\(song.notes.count) notes • Pitch practice")
+                                Text(song.notes.isEmpty ? "Audio only • Listen to original" : "\(song.notes.count) notes • Pitch practice")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }

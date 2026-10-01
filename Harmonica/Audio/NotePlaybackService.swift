@@ -22,6 +22,7 @@ enum NotePlaybackServiceError: LocalizedError {
     }
 }
 
+@MainActor
 final class NotePlaybackService: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var isPlayingSequence = false
@@ -30,6 +31,10 @@ final class NotePlaybackService: ObservableObject {
     private let player = AVAudioPlayerNode()
     private let sampleRate = 44_100.0
     private var playbackID = UUID()
+    private var sequenceTones: [(frequency: Double, duration: TimeInterval)] = []
+    private var sequenceToneIndex = 0
+    private var sequenceFrameOffset = 0
+    private var sequenceBuffersInFlight = 0
 
     init() {
         engine.attach(player)
@@ -37,7 +42,8 @@ final class NotePlaybackService: ObservableObject {
         engine.connect(player, to: engine.mainMixerNode, format: format)
     }
 
-    func play(noteName: String, duration: TimeInterval = 0.8) throws {
+    @MainActor
+    func play(noteName: String, duration: TimeInterval = 0.8) async throws {
         guard let frequency = NoteMapper.frequency(for: noteName) else {
             throw NotePlaybackServiceError.invalidNote
         }
@@ -47,23 +53,105 @@ final class NotePlaybackService: ObservableObject {
             throw NotePlaybackServiceError.unableToCreateBuffer
         }
 
-        try startPlayback(buffer: buffer, sequence: false)
+        try await startPlayback(buffer: buffer, sequence: false)
     }
 
     /// Plays only newly synthesized tones. The imported source recording is not mixed into this cover.
-    func play(events: [HarmonicaNoteEvent]) throws {
-        let tones = events.compactMap { event -> (Double, TimeInterval)? in
-            guard let frequency = NoteMapper.frequency(for: event.note) else { return nil }
-            return (frequency, event.duration)
-        }
+    @MainActor
+    func play(events: [HarmonicaNoteEvent]) async throws {
+        let tones = Self.coverTones(for: events)
         guard !tones.isEmpty else { throw NotePlaybackServiceError.noPlayableNotes }
-
         stop()
-        guard let buffer = makeBuffer(for: tones) else {
-            throw NotePlaybackServiceError.unableToCreateBuffer
+        let currentPlaybackID = UUID()
+        playbackID = currentPlaybackID
+        try await AppAudioSession.activate()
+        guard playbackID == currentPlaybackID else { return }
+        sequenceTones = tones
+        sequenceToneIndex = 0
+        sequenceFrameOffset = 0
+        sequenceBuffersInFlight = 0
+        // Bound memory to three half-second buffers, including for long imported songs.
+        for _ in 0..<3 { scheduleNextSequenceBuffer(playbackID: currentPlaybackID) }
+        guard sequenceBuffersInFlight > 0 else { throw NotePlaybackServiceError.unableToCreateBuffer }
+        engine.prepare()
+        do {
+            if !engine.isRunning { try engine.start() }
+        } catch {
+            stop()
+            throw error
         }
+        isPlaying = true
+        isPlayingSequence = true
+        player.play()
+        guard player.isPlaying else {
+            stop()
+            throw NotePlaybackServiceError.unableToStartPlayback
+        }
+    }
 
-        try startPlayback(buffer: buffer, sequence: true)
+    /// A zero-frequency segment is a rest. Source timestamps retain gaps; very fast
+    /// arpeggios expand the playable timeline rather than dropping their chord tones.
+    nonisolated static func coverTones(for events: [HarmonicaNoteEvent]) -> [(frequency: Double, duration: TimeInterval)] {
+        var tones: [(frequency: Double, duration: TimeInterval)] = []
+        var sourceCursor = 0.0
+        for event in events {
+            guard event.duration.isFinite, event.duration > 0,
+                  let frequency = NoteMapper.frequency(for: event.note) else { continue }
+            if let start = event.startTime, start.isFinite, start > sourceCursor {
+                tones.append((0, start - sourceCursor))
+            }
+            tones.append((frequency, event.duration))
+            let sourceDuration = event.sourceDuration.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? event.duration
+            sourceCursor = max(sourceCursor, event.startTime ?? sourceCursor) + sourceDuration
+        }
+        return tones
+    }
+
+    @MainActor
+    private func scheduleNextSequenceBuffer(playbackID currentPlaybackID: UUID) {
+        guard playbackID == currentPlaybackID, sequenceToneIndex < sequenceTones.count,
+              let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(sampleRate / 2)),
+              let samples = buffer.floatChannelData?[0] else { return }
+        var written = 0
+        let capacity = Int(buffer.frameCapacity)
+        while written < capacity, sequenceToneIndex < sequenceTones.count {
+            let tone = sequenceTones[sequenceToneIndex]
+            let toneFrames = max(1, Int(min(tone.duration, Double(Int.max / 2) / sampleRate) * sampleRate))
+            let count = min(capacity - written, toneFrames - sequenceFrameOffset)
+            for frame in 0..<count {
+                let offset = sequenceFrameOffset + frame
+                let time = Double(offset) / sampleRate
+                let attack = min(1, time / 0.008)
+                let release = min(1, Double(toneFrames - offset - 1) / sampleRate / 0.015)
+                samples[written + frame] = tone.frequency == 0 ? 0 : Float(
+                    (sin(2 * .pi * tone.frequency * time)
+                     + 0.24 * sin(2 * .pi * tone.frequency * 2 * time + 0.08)
+                     + 0.09 * sin(2 * .pi * tone.frequency * 3 * time + 0.17))
+                    * attack * release * (0.96 + 0.04 * sin(2 * .pi * 5.2 * time)) * 0.19
+                )
+            }
+            written += count
+            sequenceFrameOffset += count
+            if sequenceFrameOffset >= toneFrames {
+                sequenceToneIndex += 1
+                sequenceFrameOffset = 0
+            }
+        }
+        buffer.frameLength = AVAudioFrameCount(written)
+        sequenceBuffersInFlight += 1
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.playbackID == currentPlaybackID else { return }
+                self.sequenceBuffersInFlight -= 1
+                self.scheduleNextSequenceBuffer(playbackID: currentPlaybackID)
+                if self.sequenceBuffersInFlight == 0 {
+                    self.isPlaying = false
+                    self.isPlayingSequence = false
+                    self.sequenceTones = []
+                }
+            }
+        }
     }
 
     private func makeBuffer(for tones: [(frequency: Double, duration: TimeInterval)]) -> AVAudioPCMBuffer? {
@@ -101,18 +189,14 @@ final class NotePlaybackService: ObservableObject {
         return buffer
     }
 
-    private func startPlayback(buffer: AVAudioPCMBuffer, sequence: Bool) throws {
-        try AppAudioSession.activate()
-
+    @MainActor
+    private func startPlayback(buffer: AVAudioPCMBuffer, sequence: Bool) async throws {
         let currentPlaybackID = UUID()
         playbackID = currentPlaybackID
-        player.scheduleBuffer(buffer, at: nil, options: .interrupts) { [weak self] in
-            DispatchQueue.main.async {
-                guard self?.playbackID == currentPlaybackID else { return }
-                self?.isPlaying = false
-                self?.isPlayingSequence = false
-            }
-        }
+        try await AppAudioSession.activate()
+        guard playbackID == currentPlaybackID else { return }
+
+        schedule(buffer, playbackID: currentPlaybackID)
 
         engine.prepare()
         if !engine.isRunning {
@@ -134,9 +218,21 @@ final class NotePlaybackService: ObservableObject {
         }
     }
 
+    private func schedule(_ buffer: AVAudioPCMBuffer, playbackID currentPlaybackID: UUID) {
+        player.scheduleBuffer(buffer, at: nil, options: .interrupts) { [weak self] in
+            Task { @MainActor [weak self] in
+                guard self?.playbackID == currentPlaybackID else { return }
+                self?.isPlaying = false
+                self?.isPlayingSequence = false
+            }
+        }
+    }
+
     func stop() {
         playbackID = UUID()
         player.stop()
+        sequenceTones = []
+        sequenceBuffersInFlight = 0
         isPlaying = false
         isPlayingSequence = false
     }

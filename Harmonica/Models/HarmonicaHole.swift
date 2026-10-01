@@ -1,11 +1,11 @@
 import Foundation
 
-enum Airflow: String, Codable, CaseIterable {
+nonisolated enum Airflow: String, Codable, CaseIterable {
     case blow
     case draw
 }
 
-struct HarmonicaHole: Codable, Hashable, Identifiable {
+nonisolated struct HarmonicaHole: Codable, Hashable, Identifiable {
     let index: Int
     let airflow: Airflow
 

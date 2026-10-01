@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker from "./spotify-worker.mjs";
+import worker, { mapSpotifyAnalysisToNotes } from "./spotify-worker.mjs";
 
 const trackURL = "https://open.spotify.com/track/11dFghVXANMlKmJXsNCbNl?si=abc";
 const env = {
@@ -53,8 +53,8 @@ test("transcription request returns the iOS song contract from Spotify responses
       title: "Test Track — Test Artist",
       bpm: 102,
       notes: [
-        { note: "C5", duration: 0.7, hole: "4B" },
-        { note: "D5", duration: 0.3, hole: "4D" },
+        { note: "C5", duration: 0.7, hole: "4B", startTime: 0, sourceNotes: ["C5", "G5"] },
+        { note: "D5", duration: 0.3, hole: "4D", startTime: 0.7, sourceNotes: ["D5"] },
       ],
     });
   } finally {
@@ -107,7 +107,7 @@ test("Spotify analysis denial is returned to the app as a 403 response", async (
   }
 });
 
-test("oversized Spotify analysis stays within the app's note limit", async () => {
+test("long Spotify analysis retains every segment in order", async () => {
   const originalFetch = globalThis.fetch;
   const segments = Array.from({ length: 1536 }, (_, index) => {
     const pitches = Array(12).fill(0.05);
@@ -125,7 +125,7 @@ test("oversized Spotify analysis stays within the app's note limit", async () =>
     const response = await worker.fetch(request(), env);
     assert.equal(response.status, 200);
     const song = await response.json();
-    assert.equal(song.notes.length, 512);
+    assert.equal(song.notes.length, 1536);
     assert.deepEqual(song.notes.slice(0, 4).map((note) => note.note), ["C5", "D5", "C5", "D5"]);
   } finally {
     globalThis.fetch = originalFetch;
@@ -148,4 +148,19 @@ test("a Spotify response with no stable pitches returns an actionable error", as
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("chroma chords keep accidentals and quiet gaps rather than merging across silence", () => {
+  const pitches = Array(12).fill(0.05);
+  pitches[1] = 0.9;
+  pitches[5] = 0.7;
+  pitches[8] = 0.6;
+  const notes = mapSpotifyAnalysisToNotes({ segments: [
+    { start: 0, duration: 0.4, confidence: 0.9, loudness_max: -8, pitches },
+    { start: 0.4, duration: 0.3, confidence: 0.9, loudness_max: -60, pitches },
+    { start: 0.7, duration: 0.4, confidence: 0.9, loudness_max: -8, pitches },
+  ] });
+  assert.equal(notes.length, 2);
+  assert.deepEqual(notes[0].sourceNotes, ["C#5", "F5", "G#5"]);
+  assert.equal(notes[1].startTime, 0.7);
 });

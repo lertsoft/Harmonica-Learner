@@ -1,26 +1,53 @@
 import XCTest
 
+@MainActor
 final class PracticeJourneysUITests: XCTestCase {
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
     }
 
     func testFirstLaunchTourAndQuickStartReplay() {
         let app = launchApp(hasSeenOnboarding: false)
 
-        XCTAssertTrue(app.staticTexts["Learn the breath pattern"].waitForExistence(timeout: 10))
-        app.buttons["Continue"].tap()
-        XCTAssertTrue(app.staticTexts["Listen, match, move"].exists)
-        app.buttons["Continue"].tap()
-        XCTAssertTrue(app.staticTexts["Build your practice library"].exists)
-        app.buttons["Continue"].tap()
-        XCTAssertTrue(app.staticTexts["Make practice your own"].exists)
-        app.buttons["Explore Without Microphone"].tap()
+        XCTAssertTrue(app.staticTexts["Pick your track"].waitForExistence(timeout: 10))
+        app.buttons["Next"].tap()
+        XCTAssertTrue(app.staticTexts["Read harmonica tabs instantly"].waitForExistence(timeout: 5))
+        app.buttons["Next"].tap()
+        XCTAssertTrue(app.staticTexts["Choose how you play"].waitForExistence(timeout: 5))
+        app.buttons["Next"].tap()
+        XCTAssertTrue(app.staticTexts["Tap to listen & score"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Allow Mic & Start Playing"].waitForExistence(timeout: 5))
+        app.buttons["Skip"].tap()
 
         XCTAssertTrue(app.buttons["Practice setup"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Review Harmonica"].exists)
         app.buttons["Practice setup"].tap()
         app.buttons["Show Quick Start"].tap()
-        XCTAssertTrue(app.staticTexts["Learn the breath pattern"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Pick your track"].waitForExistence(timeout: 5))
+    }
+
+    func testMicrophoneGraphStartsPausesAndRestartsAfterReferencePlayback() {
+        let app = launchApp()
+        addUIInterruptionMonitor(withDescription: "Microphone access") { alert in
+            guard alert.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "microphone")).firstMatch.exists,
+                  alert.buttons["Allow"].exists else { return false }
+            alert.buttons["Allow"].tap()
+            return true
+        }
+        let start = app.buttons["Start Practice"]
+        let pause = app.buttons["Pause Practice"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        start.tap()
+        if !pause.waitForExistence(timeout: 2) { app.tap() }
+        XCTAssertTrue(pause.waitForExistence(timeout: 10))
+        pause.tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        app.buttons["Hear target note"].tap()
+        start.tap()
+        XCTAssertTrue(pause.waitForExistence(timeout: 10))
+        pause.tap()
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
     }
 
     func testLibrarySearchSelectionSkipAndRestart() {
@@ -125,6 +152,25 @@ final class PracticeJourneysUITests: XCTestCase {
         app.buttons["Done"].tap()
     }
 
+    func testOnboardingCalloutAvoidsTargetInLandscape() {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = launchApp(
+            hasSeenOnboarding: false,
+            extraLaunchArguments: ["-ui-test-onboarding-layout-probes"]
+        )
+        XCTAssertTrue(app.staticTexts["Pick your track"].waitForExistence(timeout: 10))
+        app.buttons["Next"].tap()
+        XCTAssertTrue(app.staticTexts["Read harmonica tabs instantly"].waitForExistence(timeout: 5))
+
+        let target = app.descendants(matching: .any).matching(identifier: "onboarding-highlight-frame").firstMatch
+        let callout = app.descendants(matching: .any).matching(identifier: "onboarding-callout-frame").firstMatch
+        XCTAssertTrue(target.waitForExistence(timeout: 5))
+        XCTAssertTrue(callout.waitForExistence(timeout: 5))
+        XCTAssertFalse(callout.frame.intersects(target.frame))
+    }
+
     func testFifthMusicLibraryImportShowsPurchaseGate() {
         let app = launchApp(musicLibraryImportCount: 5)
         XCTAssertTrue(app.staticTexts["Keep the music going"].waitForExistence(timeout: 15))
@@ -151,6 +197,28 @@ final class PracticeJourneysUITests: XCTestCase {
         XCTAssertTrue(setup.isHittable)
         setup.tap()
         XCTAssertTrue(app.navigationBars["Practice Setup"].waitForExistence(timeout: 5))
+    }
+
+    func testOnboardingRemainsUsableAtAccessibilityTextSize() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-hasSeenPracticeOnboarding", "NO",
+            "-libraryImport.successfulCount", "0",
+            "-ui-test-reset-review-prompts",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Pick your track"].waitForExistence(timeout: 10))
+        for title in ["Read harmonica tabs instantly", "Choose how you play", "Tap to listen & score"] {
+            let next = app.buttons["Next"]
+            XCTAssertTrue(next.isHittable)
+            next.tap()
+            XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 5))
+        }
+        XCTAssertTrue(app.buttons["Skip"].isHittable)
+        app.buttons["Skip"].tap()
+        XCTAssertTrue(app.buttons["Practice setup"].waitForExistence(timeout: 5))
     }
 
     func testSavedSongCanBePracticedRenamedAndDeletedAcrossLaunches() {
@@ -208,17 +276,54 @@ final class PracticeJourneysUITests: XCTestCase {
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "New Session")).firstMatch.exists)
     }
 
+    func testImportedChordCanBePracticedPreviewedAndReopened() {
+        let app = launchApp(extraLaunchArguments: ["-ui-test-import-chord"])
+        let context = app.staticTexts["source-chord-context"]
+        XCTAssertTrue(context.waitForExistence(timeout: 20))
+        if app.buttons["Not Now"].waitForExistence(timeout: 4) { app.buttons["Not Now"].tap() }
+        XCTAssertTrue(context.label.contains("C5 · E5 · G5"))
+        XCTAssertTrue(app.staticTexts["Concert pitch C5"].exists)
+        app.buttons["Skip"].tap()
+        XCTAssertTrue(app.staticTexts["Concert pitch E5"].waitForExistence(timeout: 5))
+        app.buttons["Skip"].tap()
+        XCTAssertTrue(app.staticTexts["Concert pitch G5"].waitForExistence(timeout: 5))
+        app.buttons["Playback options"].tap()
+        app.buttons["Hear Harmonica Cover"].tap()
+        app.buttons["Playback options"].tap()
+        XCTAssertTrue(app.buttons["Stop Harmonica Cover"].waitForExistence(timeout: 5))
+        app.buttons["Stop Harmonica Cover"].tap()
+        app.buttons["Playback options"].tap()
+        XCTAssertTrue(app.buttons["Hear Harmonica Cover"].waitForExistence(timeout: 5))
+        app.buttons["Hear Imported Source"].tap()
+        app.terminate()
+        app.launchArguments = ["-hasSeenPracticeOnboarding", "YES", "-libraryImport.successfulCount", "0"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Practice library"].waitForExistence(timeout: 10))
+        app.buttons["Practice library"].tap()
+        let search = app.searchFields.firstMatch
+        search.tap()
+        search.typeText("UI Chord Arrangement")
+        let song = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "UI Chord Arrangement")).firstMatch
+        XCTAssertTrue(song.waitForExistence(timeout: 5))
+        song.tap()
+        XCTAssertTrue(context.waitForExistence(timeout: 5))
+        XCTAssertTrue(context.label.contains("C5 · E5 · G5"))
+    }
+
     private func launchApp(
         hasSeenOnboarding: Bool = true,
         musicLibraryImportCount: Int = 0,
-        seedRecording: Bool = false
+        seedRecording: Bool = false,
+        extraLaunchArguments: [String] = []
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "-hasSeenPracticeOnboarding", hasSeenOnboarding ? "YES" : "NO",
-            "-libraryImport.successfulCount", String(musicLibraryImportCount)
+            "-libraryImport.successfulCount", String(musicLibraryImportCount),
+            "-ui-test-reset-review-prompts"
         ]
         if seedRecording { app.launchArguments.append("-ui-test-seed-recording") }
+        app.launchArguments.append(contentsOf: extraLaunchArguments)
         app.launch()
         return app
     }

@@ -18,6 +18,7 @@ struct FreestyleRecording: Codable, Identifiable, Hashable {
     let notes: [HarmonicaNoteEvent]
     let duration: TimeInterval
     let source: RecordingSource
+    let arrangement: HarmonicaArrangementSummary?
 
     init(
         id: UUID,
@@ -28,7 +29,8 @@ struct FreestyleRecording: Codable, Identifiable, Hashable {
         audioFileName: String?,
         notes: [HarmonicaNoteEvent],
         duration: TimeInterval,
-        source: RecordingSource = .freestyle
+        source: RecordingSource = .freestyle,
+        arrangement: HarmonicaArrangementSummary? = nil
     ) {
         self.id = id
         self.title = title
@@ -39,6 +41,7 @@ struct FreestyleRecording: Codable, Identifiable, Hashable {
         self.notes = notes
         self.duration = duration
         self.source = source
+        self.arrangement = arrangement
     }
 
     var hasAudioPlayback: Bool {
@@ -74,6 +77,7 @@ struct FreestyleRecording: Codable, Identifiable, Hashable {
         case notes
         case duration
         case source
+        case arrangement
     }
 
     init(from decoder: Decoder) throws {
@@ -87,5 +91,6 @@ struct FreestyleRecording: Codable, Identifiable, Hashable {
         notes = try container.decode([HarmonicaNoteEvent].self, forKey: .notes)
         duration = try container.decode(TimeInterval.self, forKey: .duration)
         source = try container.decodeIfPresent(RecordingSource.self, forKey: .source) ?? .freestyle
+        arrangement = try container.decodeIfPresent(HarmonicaArrangementSummary.self, forKey: .arrangement)
     }
 }

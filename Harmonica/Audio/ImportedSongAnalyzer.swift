@@ -2,33 +2,27 @@ import AVFoundation
 import Accelerate
 import Foundation
 
-struct ImportedSongAnalysis {
+nonisolated struct ImportedSongAnalysis {
     let notes: [HarmonicaNoteEvent]
     let duration: TimeInterval
-    let usedFallback: Bool
+    let arrangement: HarmonicaArrangementSummary
 }
 
-enum ImportedSongAnalyzerError: LocalizedError, Equatable {
+nonisolated enum ImportedSongAnalyzerError: LocalizedError, Equatable {
     case unreadableAudio
     case cancelled
 
     var errorDescription: String? {
         switch self {
-        case .unreadableAudio:
-            return "The selected audio file could not be read."
-        case .cancelled:
-            return "Song analysis was cancelled."
+        case .unreadableAudio: return "The selected audio file could not be read."
+        case .cancelled: return "Song analysis was cancelled."
         }
     }
 }
 
-/// Produces a compact, playable harmonica line from the dominant pitches in an audio file.
-/// Polyphonic mixes are intentionally treated as suggestions rather than exact transcription.
-struct ImportedSongAnalyzer {
-    private let analysisSampleRate = 11_025.0
-    private let maximumAnalysisDuration: TimeInterval = 180
-    private let windowFrameCount: AVAudioFrameCount = 8_192
-
+/// Best-effort multipitch estimation, followed by a playable single-hole arrangement.
+/// Spectral evidence is approximate in mixed recordings; no generic melody is substituted.
+nonisolated struct ImportedSongAnalyzer {
     func analyze(
         url: URL,
         layout: HarmonicaLayout,
@@ -36,184 +30,170 @@ struct ImportedSongAnalyzer {
         shouldCancel: () -> Bool = { false }
     ) throws -> ImportedSongAnalysis {
         let file = try AVAudioFile(forReading: url)
-        let sourceRate = file.processingFormat.sampleRate
-        guard sourceRate > 0, file.length > 0 else {
+        let sampleRate = file.processingFormat.sampleRate
+        guard sampleRate.isFinite, sampleRate > 0, file.length > 0 else {
             throw ImportedSongAnalyzerError.unreadableAudio
         }
-
-        let duration = min(Double(file.length) / sourceRate, maximumAnalysisDuration)
-        let maximumFrames = AVAudioFramePosition(duration * sourceRate)
-        var framesRead: AVAudioFramePosition = 0
+        let duration = Double(file.length) / sampleRate
+        // ~186 ms overlapping windows at every supported file sample rate. No time cap.
+        let log2Size = vDSP_Length(max(9, min(16, Int(ceil(log2(sampleRate * 0.15))))))
+        let size = 1 << Int(log2Size)
+        let hop = size / 4
+        guard let fft = vDSP_create_fftsetup(log2Size, FFTRadix(kFFTRadix2)) else {
+            throw ImportedSongAnalyzerError.unreadableAudio
+        }
+        defer { vDSP_destroy_fftsetup(fft) }
+        let channelCount = Int(file.processingFormat.channelCount)
+        var channelSamples = [[Float]](repeating: [], count: channelCount)
+        var window = [Float](repeating: 0, count: size)
+        vDSP_hann_window(&window, vDSP_Length(size), Int32(vDSP_HANN_NORM))
         var observations: [PitchObservation] = []
+        var position: AVAudioFramePosition = 0
+        var previousHopRMS = 0.0
         progress?(0)
-
-        while framesRead < maximumFrames {
+        while position < file.length {
             guard !shouldCancel() else { throw ImportedSongAnalyzerError.cancelled }
-            let remaining = maximumFrames - framesRead
-            let capacity = AVAudioFrameCount(min(AVAudioFramePosition(windowFrameCount), remaining))
-            guard let buffer = AVAudioPCMBuffer(
-                pcmFormat: file.processingFormat,
-                frameCapacity: capacity
-            ) else { break }
-
-            try file.read(into: buffer, frameCount: capacity)
-            guard buffer.frameLength > 0 else { break }
-            framesRead += AVAudioFramePosition(buffer.frameLength)
-
-            let windowDuration = Double(buffer.frameLength) / sourceRate
-            let frequency = try dominantFrequency(
-                in: buffer,
-                sourceSampleRate: sourceRate,
-                shouldCancel: shouldCancel
-            )
-            observations.append(PitchObservation(frequency: frequency, duration: windowDuration))
-            progress?(min(1, Double(framesRead) / Double(maximumFrames)))
-        }
-
-        let suggested = Self.makeSuggestedEvents(from: observations, layout: layout)
-        if suggested.isEmpty {
-            return ImportedSongAnalysis(
-                notes: Self.fallbackPhrase(layout: layout),
-                duration: duration,
-                usedFallback: true
-            )
-        }
-
-        return ImportedSongAnalysis(notes: suggested, duration: duration, usedFallback: false)
-    }
-
-    static func makeSuggestedEvents(
-        from observations: [PitchObservation],
-        layout: HarmonicaLayout,
-        maximumNotes: Int = 128
-    ) -> [HarmonicaNoteEvent] {
-        var runs: [(note: String, duration: TimeInterval)] = []
-
-        for observation in observations {
-            guard let frequency = observation.frequency,
-                  let note = layout.nearestPlayableNote(to: frequency) else { continue }
-
-            if let last = runs.last, last.note == note {
-                runs[runs.count - 1].duration += observation.duration
-            } else {
-                runs.append((note, observation.duration))
+            let needed = size - (channelSamples.first?.count ?? 0)
+            if needed > 0, file.framePosition < file.length {
+                guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(needed)) else {
+                    throw ImportedSongAnalyzerError.unreadableAudio
+                }
+                try file.read(into: buffer, frameCount: AVAudioFrameCount(needed))
+                guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else {
+                    throw ImportedSongAnalyzerError.unreadableAudio
+                }
+                for channel in 0..<channelCount {
+                    channelSamples[channel].append(contentsOf: UnsafeBufferPointer(start: channels[channel], count: Int(buffer.frameLength)))
+                }
             }
-        }
-
-        // Very short alternating detections in a full mix are usually percussion or overtones.
-        let stableRuns = runs.filter { $0.duration >= 0.12 }
-        let sampledRuns: [(note: String, duration: TimeInterval)]
-        if stableRuns.count <= maximumNotes {
-            sampledRuns = stableRuns
-        } else {
-            let stride = Double(stableRuns.count) / Double(maximumNotes)
-            sampledRuns = (0..<maximumNotes).map { index in
-                stableRuns[min(stableRuns.count - 1, Int(Double(index) * stride))]
-            }
-        }
-
-        return sampledRuns.compactMap { run in
-            guard let hole = layout.hole(for: run.note) else { return nil }
-            return HarmonicaNoteEvent(
-                note: run.note,
-                duration: min(2, max(0.25, (run.duration * 2).rounded() / 2)),
-                hole: "\(hole.index)\(hole.airflow == .blow ? "B" : "D")"
+            let frequencies = try pitches(
+                channels: channelSamples, sampleRate: sampleRate, size: size,
+                window: window, fft: fft, log2Size: log2Size, shouldCancel: shouldCancel
             )
-        }
-    }
-
-    static func fallbackPhrase(layout: HarmonicaLayout) -> [HarmonicaNoteEvent] {
-        let preferred = ["C5", "E5", "G5", "A5", "G5", "E5", "D5", "C5"]
-        return preferred.compactMap { note in
-            guard let hole = layout.hole(for: note) else { return nil }
-            return HarmonicaNoteEvent(
-                note: note,
-                duration: note == "C5" ? 1 : 0.5,
-                hole: "\(hole.index)\(hole.airflow == .blow ? "B" : "D")"
-            )
-        }
-    }
-
-    private func dominantFrequency(
-        in buffer: AVAudioPCMBuffer,
-        sourceSampleRate: Double,
-        shouldCancel: () -> Bool
-    ) throws -> Double? {
-        guard let channels = buffer.floatChannelData else { return nil }
-        let channelCount = Int(buffer.format.channelCount)
-        let frameCount = Int(buffer.frameLength)
-        guard channelCount > 0, frameCount > 0 else { return nil }
-
-        let downsampleStep = max(1, Int((sourceSampleRate / analysisSampleRate).rounded()))
-        let effectiveRate = sourceSampleRate / Double(downsampleStep)
-        var samples: [Double] = []
-        samples.reserveCapacity(frameCount / downsampleStep)
-
-        var frame = 0
-        while frame < frameCount {
-            var mixed: Double = 0
+            let consumed = min(hop, Int(file.length - position))
+            let hopRMS = channelSamples.map { samples in
+                let chunk = samples.prefix(consumed)
+                return sqrt(chunk.reduce(0.0) { $0 + Double($1 * $1) } / Double(max(1, chunk.count)))
+            }.max() ?? 0
+            let newAttack = previousHopRMS > 0.003 && hopRMS > previousHopRMS * 1.8
+            observations.append(PitchObservation(
+                frequencies: frequencies, duration: Double(consumed) / sampleRate, startsNewNote: newAttack
+            ))
+            previousHopRMS = hopRMS
+            position += AVAudioFramePosition(consumed)
             for channel in 0..<channelCount {
-                mixed += Double(channels[channel][frame])
+                channelSamples[channel].removeFirst(min(consumed, channelSamples[channel].count))
             }
-            samples.append(mixed / Double(channelCount))
-            frame += downsampleStep
+            progress?(min(1, Double(position) / Double(file.length)))
         }
+        guard !shouldCancel() else { throw ImportedSongAnalyzerError.cancelled }
+        let arrangement = HarmonicaArrangement.make(from: observations, layout: layout)
+        return ImportedSongAnalysis(notes: arrangement.notes, duration: duration, arrangement: arrangement.summary)
+    }
 
-        guard samples.count >= 256 else { return nil }
-        let mean = samples.reduce(0, +) / Double(samples.count)
-        for index in samples.indices {
-            samples[index] -= mean
-        }
+    static func makeSuggestedEvents(from observations: [PitchObservation], layout: HarmonicaLayout) -> [HarmonicaNoteEvent] {
+        HarmonicaArrangement.make(from: observations, layout: layout).notes
+    }
 
-        let rms = sqrt(samples.reduce(0) { $0 + $1 * $1 } / Double(samples.count))
-        guard rms >= 0.008 else { return nil }
-
-        var energyPrefix = [Double](repeating: 0, count: samples.count + 1)
-        for index in samples.indices {
-            energyPrefix[index + 1] = energyPrefix[index] + samples[index] * samples[index]
-        }
-
-        let minimumFrequency = 90.0
-        let maximumFrequency = 1_200.0
-        let minimumLag = max(2, Int(effectiveRate / maximumFrequency))
-        let maximumLag = min(samples.count / 2, Int(effectiveRate / minimumFrequency))
-        guard minimumLag < maximumLag else { return nil }
-
-        var bestLag = 0
-        var bestCorrelation = 0.0
-        try samples.withUnsafeBufferPointer { sampleBuffer in
-            guard let baseAddress = sampleBuffer.baseAddress else { return }
-            for lag in minimumLag...maximumLag {
-                if lag.isMultiple(of: 16), shouldCancel() {
-                    throw ImportedSongAnalyzerError.cancelled
-                }
-                let comparisonCount = samples.count - lag
-                var numerator = 0.0
-                vDSP_dotprD(
-                    baseAddress,
-                    1,
-                    baseAddress.advanced(by: lag),
-                    1,
-                    &numerator,
-                    vDSP_Length(comparisonCount)
-                )
-                let firstEnergy = energyPrefix[comparisonCount]
-                let secondEnergy = energyPrefix[samples.count] - energyPrefix[lag]
-                let denominator = sqrt(firstEnergy * secondEnergy)
-                let correlation = denominator > 0 ? numerator / denominator : 0
-                if correlation > bestCorrelation {
-                    bestCorrelation = correlation
-                    bestLag = lag
+    private func pitches(
+        channels: [[Float]], sampleRate: Double, size: Int, window: [Float],
+        fft: FFTSetup, log2Size: vDSP_Length, shouldCancel: () -> Bool
+    ) throws -> [Double] {
+        var power = [Float](repeating: 0, count: size / 2)
+        var rms: Double = 0
+        // Add channel energies rather than samples: stereo phase cancellation cannot erase a note.
+        for channel in channels {
+            guard !shouldCancel() else { throw ImportedSongAnalyzerError.cancelled }
+            guard !channel.isEmpty else { continue }
+            let mean = channel.reduce(0, +) / Float(channel.count)
+            var samples = [Float](repeating: 0, count: size)
+            var energy = 0.0
+            for index in channel.indices {
+                let value = channel[index] - mean
+                energy += Double(value * value)
+                samples[index] = value * window[index]
+            }
+            rms = max(rms, sqrt(energy / Double(channel.count)))
+            var real = [Float](repeating: 0, count: size / 2)
+            var imaginary = real
+            real.withUnsafeMutableBufferPointer { re in
+                imaginary.withUnsafeMutableBufferPointer { im in
+                    var split = DSPSplitComplex(realp: re.baseAddress!, imagp: im.baseAddress!)
+                    samples.withUnsafeBufferPointer { input in
+                        input.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: size / 2) {
+                            vDSP_ctoz($0, 2, &split, 1, vDSP_Length(size / 2))
+                        }
+                    }
+                    vDSP_fft_zrip(fft, &split, 1, log2Size, FFTDirection(FFT_FORWARD))
+                    // DC and Nyquist are packed together; neither is a note candidate.
+                    for index in 1..<size / 2 {
+                        power[index] += re[index] * re[index] + im[index] * im[index]
+                    }
                 }
             }
         }
-
-        guard bestLag > 0, bestCorrelation >= 0.35 else { return nil }
-        return effectiveRate / Double(bestLag)
+        guard rms >= 0.003 else { return [] }
+        let magnitudes = power.map { sqrt(Double($0)) }
+        let lower = max(2, Int(80 * Double(size) / sampleRate))
+        let upper = min(size / 2 - 2, Int(2_200 * Double(size) / sampleRate))
+        guard lower < upper else { return [] }
+        let noise = magnitudes[lower...upper].sorted()[((upper - lower) / 2)]
+        let strongest = magnitudes[lower...upper].max() ?? 0
+        guard strongest > max(0.01, noise * 12) else { return [] }
+        struct Peak {
+            let frequency: Double
+            let amplitude: Double
+        }
+        var peaks: [Peak] = []
+        for bin in lower...upper {
+            let amplitude = magnitudes[bin]
+            guard amplitude > max(noise * 10, strongest * 0.16),
+                  amplitude > magnitudes[bin - 1], amplitude >= magnitudes[bin + 1] else { continue }
+            // Parabolic interpolation avoids quantizing a pitch to the nearest FFT bin.
+            let left = log(max(1e-12, magnitudes[bin - 1]))
+            let middle = log(max(1e-12, amplitude))
+            let right = log(max(1e-12, magnitudes[bin + 1]))
+            let denominator = left - 2 * middle + right
+            let delta = abs(denominator) > 1e-12 ? 0.5 * (left - right) / denominator : 0
+            let frequency = (Double(bin) + max(-0.5, min(0.5, delta))) * sampleRate / Double(size)
+            guard let pitch = NoteMapper.pitch(for: frequency), abs(pitch.centsOffset) < 40 else { continue }
+            peaks.append(Peak(frequency: frequency, amplitude: amplitude))
+        }
+        func isHarmonic(_ higher: Double, of lower: Double) -> Bool {
+            let multiple = (higher / lower).rounded()
+            return multiple >= 2 && multiple <= 8 && abs(1200 * log2(higher / (lower * multiple))) < 45
+        }
+        var detected: [Double] = []
+        while !peaks.isEmpty, detected.count < 4 {
+            guard !shouldCancel() else { throw ImportedSongAnalyzerError.cancelled }
+            let best = peaks.max { left, right in
+                func score(_ peak: Peak) -> Double {
+                    peak.amplitude + peaks.reduce(0) { score, other in
+                        score + (isHarmonic(other.frequency, of: peak.frequency) ? other.amplitude * 0.7 : 0)
+                    }
+                }
+                return score(left) < score(right)
+            }!
+            detected.append(best.frequency)
+            peaks.removeAll { abs(1200 * log2($0.frequency / best.frequency)) < 50 || isHarmonic($0.frequency, of: best.frequency) }
+        }
+        return detected.sorted()
     }
 }
 
-struct PitchObservation {
-    let frequency: Double?
+nonisolated struct PitchObservation {
+    let frequencies: [Double]
     let duration: TimeInterval
+
+    let startsNewNote: Bool
+
+    init(frequencies: [Double], duration: TimeInterval, startsNewNote: Bool = false) {
+        self.frequencies = frequencies
+        self.duration = duration
+        self.startsNewNote = startsNewNote
+    }
+
+    init(frequency: Double?, duration: TimeInterval) {
+        self.init(frequencies: frequency.map { [$0] } ?? [], duration: duration)
+    }
 }

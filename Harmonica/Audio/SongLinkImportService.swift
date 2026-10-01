@@ -1,6 +1,6 @@
 import Foundation
 
-enum SongLinkProvider: String, Codable, Equatable {
+nonisolated enum SongLinkProvider: String, Codable, Equatable {
     case spotify
     case youtube
     case appleMusic
@@ -57,6 +57,7 @@ struct LinkedSongTranscription {
     let bpm: Int
     let key: String
     let notes: [HarmonicaNoteEvent]
+    let arrangement: HarmonicaArrangementSummary
 }
 
 enum SongLinkImportResult {
@@ -145,7 +146,8 @@ struct SongLinkImportService {
             throw SongLinkImportError.invalidServiceResponse
         }
 
-        let notes = Self.playableEvents(from: payload.notes, layout: layout)
+        let arrangement = Self.arrange(events: payload.notes, layout: layout)
+        let notes = arrangement.notes
         guard !notes.isEmpty else { throw SongLinkImportError.noPlayableNotes }
         return .transcription(
             LinkedSongTranscription(
@@ -154,7 +156,8 @@ struct SongLinkImportService {
                     : payload.title,
                 bpm: min(300, max(30, payload.bpm ?? 90)),
                 key: key,
-                notes: notes
+                notes: notes,
+                arrangement: arrangement.summary
             )
         )
     }
@@ -163,14 +166,59 @@ struct SongLinkImportService {
         from events: [HarmonicaNoteEvent],
         layout: HarmonicaLayout
     ) -> [HarmonicaNoteEvent] {
-        events.prefix(512).compactMap { event in
-            guard let hole = layout.hole(for: event.note) else { return nil }
-            return HarmonicaNoteEvent(
-                note: event.note,
-                duration: min(4, max(0.1, event.duration)),
-                hole: "\(hole.index)\(hole.airflow == .blow ? "B" : "D")"
-            )
+        arrange(events: events, layout: layout).notes
+    }
+
+    /// Legacy events are sequential. Timed responses may contain simultaneous notes;
+    /// sourceNotes carries a chord group without requiring a new provider contract.
+    static func arrange(events: [HarmonicaNoteEvent], layout: HarmonicaLayout) -> HarmonicaArrangement {
+        struct TimedPitch {
+            let start: Double
+            let end: Double
+            let frequencies: [Double]
         }
+        var cursor = 0.0
+        var timed: [TimedPitch] = []
+        for event in events {
+            guard event.duration.isFinite, event.duration > 0 else { continue }
+            let start = event.startTime ?? cursor
+            guard start.isFinite, start >= 0 else { continue }
+            let end = start + event.duration
+            guard end.isFinite else { continue }
+            cursor = max(cursor, end)
+            let source = event.sourceNotes?.isEmpty == false ? event.sourceNotes! : [event.note]
+            let frequencies = source.compactMap { NoteMapper.frequency(for: $0) }
+            timed.append(TimedPitch(start: start, end: end, frequencies: frequencies))
+        }
+        // Sweep time boundaries to retain overlaps and gaps in O(n log n), not O(n²).
+        struct Boundary {
+            let time: Double
+            let index: Int
+            let starts: Bool
+        }
+        let boundaries = timed.enumerated().flatMap { index, item in
+            [Boundary(time: item.start, index: index, starts: true), Boundary(time: item.end, index: index, starts: false)]
+        }.sorted { $0.time < $1.time }
+        var active: Set<Int> = []
+        var observations: [PitchObservation] = []
+        var time = 0.0
+        var index = 0
+        while index < boundaries.count {
+            let nextTime = boundaries[index].time
+            if nextTime > time {
+                observations.append(PitchObservation(
+                    frequencies: active.sorted().flatMap { timed[$0].frequencies }, duration: nextTime - time,
+                    startsNewNote: active.contains { abs(timed[$0].start - time) < 0.000001 }
+                ))
+            }
+            while index < boundaries.count, boundaries[index].time == nextTime {
+                let boundary = boundaries[index]
+                if boundary.starts { active.insert(boundary.index) } else { active.remove(boundary.index) }
+                index += 1
+            }
+            time = nextTime
+        }
+        return HarmonicaArrangement.make(from: observations, layout: layout, minimumRunDuration: 0)
     }
 
     private func downloadAudio(from url: URL) async throws -> URL {
