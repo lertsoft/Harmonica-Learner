@@ -18,13 +18,70 @@ final class PracticeJourneysUITests: XCTestCase {
         app.buttons["Next"].tap()
         XCTAssertTrue(app.staticTexts["Tap to listen & score"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Allow Mic & Start Playing"].waitForExistence(timeout: 5))
-        app.buttons["Skip"].tap()
+        app.buttons["onboardingSkipButton"].tap()
 
         XCTAssertTrue(app.buttons["Practice setup"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["Review Harmonica"].exists)
+        XCTAssertFalse(app.buttons["reviewAppButton"].waitForExistence(timeout: 3))
         app.buttons["Practice setup"].tap()
         app.buttons["Show Quick Start"].tap()
         XCTAssertTrue(app.staticTexts["Pick your track"].waitForExistence(timeout: 5))
+        app.buttons["onboardingSkipButton"].tap()
+        XCTAssertFalse(app.buttons["reviewAppButton"].waitForExistence(timeout: 3))
+    }
+
+    func testCompletedSongOffersReviewOncePerVersion() {
+        let app = launchApp(seedRecording: true)
+        app.buttons["Practice library"].tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("UI Test Session")
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "UI Test Session")).firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["1/2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["reviewAppButton"].exists)
+        app.buttons["Skip"].tap()
+        XCTAssertFalse(app.buttons["reviewAppButton"].exists)
+        app.buttons["Skip"].tap()
+        XCTAssertTrue(app.staticTexts["Nice practice session"].waitForExistence(timeout: 5))
+        app.buttons["reviewNotNowButton"].tap()
+        app.buttons["Restart"].tap()
+        app.buttons["Skip"].tap()
+        app.buttons["Skip"].tap()
+        XCTAssertFalse(app.buttons["reviewAppButton"].waitForExistence(timeout: 3))
+
+        app.terminate()
+        app.launchArguments = ["-hasSeenPracticeOnboarding", "YES", "-libraryImport.successfulCount", "0"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Restart"].waitForExistence(timeout: 10))
+        app.buttons["Restart"].tap()
+        app.buttons["Skip"].tap()
+        app.buttons["Skip"].tap()
+        XCTAssertFalse(app.buttons["reviewAppButton"].waitForExistence(timeout: 3))
+    }
+
+    func testSavedFreestyleSessionOffersReview() {
+        let app = launchApp()
+        addUIInterruptionMonitor(withDescription: "Microphone access") { alert in
+            guard alert.buttons["Allow"].exists else { return false }
+            alert.buttons["Allow"].tap()
+            return true
+        }
+        XCTAssertTrue(app.buttons["Freestyle"].waitForExistence(timeout: 10))
+        app.buttons["Freestyle"].tap()
+        XCTAssertFalse(app.buttons["reviewAppButton"].waitForExistence(timeout: 3))
+        app.buttons["Record Freestyle"].tap()
+        let stop = app.buttons["Stop & Save"]
+        if !stop.waitForExistence(timeout: 2) { app.tap() }
+        XCTAssertTrue(stop.waitForExistence(timeout: 10))
+        let recordedLongEnough = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND label != %@ AND label != %@", "00:00", "00:01"),
+            object: app.staticTexts["freestyleElapsedTime"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [recordedLongEnough], timeout: 5), .completed)
+        stop.tap()
+        XCTAssertTrue(app.staticTexts["Enjoying Freestyle?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["reviewAppButton"].exists)
+        app.buttons["reviewNotNowButton"].tap()
     }
 
     func testMicrophoneGraphStartsPausesAndRestartsAfterReferencePlayback() {
@@ -135,6 +192,34 @@ final class PracticeJourneysUITests: XCTestCase {
         XCTAssertTrue(app.alerts["Song Link"].waitForExistence(timeout: 5))
     }
 
+    func testMainPracticeFitsWithoutScrollingOrBouncing() {
+        let app = launchApp(extraLaunchArguments: ["-ui-test-seed-screen-fit-song"])
+        XCTAssertTrue(app.staticTexts["1/1,405"].waitForExistence(timeout: 10))
+        assertMainPracticeFits(in: app)
+        let target = app.descendants(matching: .any).matching(identifier: "target-note-card").firstMatch
+        let originalFrame = target.frame
+        app.swipeUp()
+        XCTAssertEqual(target.frame, originalFrame)
+        app.swipeDown()
+        XCTAssertEqual(target.frame, originalFrame)
+        XCTAssertEqual(app.scrollViews.count, 0)
+        attachScreen(app, name: "Fitted portrait practice")
+
+        app.buttons["Freestyle"].tap()
+        XCTAssertTrue(app.buttons["Record Freestyle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Record Freestyle"].isHittable)
+        let freestyle = app.descendants(matching: .any).matching(identifier: "freestyle-live-card").firstMatch
+        XCTAssertTrue(app.frame.contains(freestyle.frame))
+        XCTAssertEqual(app.scrollViews.count, 0)
+        app.buttons["Guided"].tap()
+        XCTAssertTrue(app.buttons["Start Practice"].waitForExistence(timeout: 5))
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        assertMainPracticeFits(in: app)
+        attachScreen(app, name: "Fitted landscape practice")
+    }
+
     func testPracticeControlsRemainReachableInLandscape() {
         let app = launchApp()
         assertPracticeColumns(in: app)
@@ -171,6 +256,52 @@ final class PracticeJourneysUITests: XCTestCase {
         XCTAssertFalse(callout.frame.intersects(target.frame))
     }
 
+    func testOnboardingCardsFitWithoutScrolling() {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let steps: [(title: String, details: [String])] = [
+            ("Pick your track", ["Built-In Classics", "Bring Your Own Audio",
+                "Curated starter songs and beginner melodies ready to play",
+                "Import audio from Files or Music Library, record a song, or paste a supported song link"]),
+            ("Read harmonica tabs instantly", ["Exhale out", "Inhale in",
+                "Target hole turns emerald green when your pitch matches!"]),
+            ("Choose how you play", ["Guided Mode", "Freestyle Jam",
+                "Note-by-note interactive sheet tabs with live pitch detection & auto-scroll",
+                "Play anything freely; the app listens and auto-transcribes your tabs live"]),
+            ("Tap to listen & score", ["Real-Time Pitch Detection", "100% On-Device & Private",
+                "Live pitch feedback helps you match the target note and its blow or draw hole",
+                "Microphone audio never leaves your phone. Zero cloud processing."])
+        ]
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let app = launchApp(hasSeenOnboarding: false)
+            for (index, step) in steps.enumerated() {
+                let title = app.staticTexts[step.title]
+                XCTAssertTrue(title.waitForExistence(timeout: 10))
+                let callout = app.descendants(matching: .any)
+                    .matching(identifier: "onboarding-callout").firstMatch
+                XCTAssertTrue(callout.exists)
+                XCTAssertEqual(app.scrollViews.count, 0)
+                for label in [step.title] + step.details {
+                    let text = app.staticTexts[label]
+                    XCTAssertTrue(text.isHittable, label)
+                    XCTAssertTrue(callout.frame.contains(text.frame),
+                        "\(label): \(text.frame) outside \(callout.frame)")
+                }
+                let action = app.buttons[index == steps.count - 1 ? "Allow Mic & Start Playing" : "Next"]
+                XCTAssertTrue(action.isHittable)
+                XCTAssertTrue(callout.frame.contains(action.frame))
+                let originalFrame = title.frame
+                title.swipeUp()
+                XCTAssertEqual(title.frame, originalFrame)
+                title.swipeDown()
+                XCTAssertEqual(title.frame, originalFrame)
+                attachScreen(app, name: "Fixed onboarding step \(index + 1) \(orientation.rawValue)")
+                if index < steps.count - 1 { action.tap() }
+            }
+            app.terminate()
+        }
+    }
+
     func testFifthMusicLibraryImportShowsPurchaseGate() {
         let app = launchApp(musicLibraryImportCount: 5)
         XCTAssertTrue(app.staticTexts["Keep the music going"].waitForExistence(timeout: 15))
@@ -179,10 +310,13 @@ final class PracticeJourneysUITests: XCTestCase {
     }
 
     func testPracticeNavigationRemainsUsableAtAccessibilityTextSize() {
-        let app = XCUIApplication()
+        let app = launchApp(extraLaunchArguments: ["-ui-test-seed-screen-fit-song"])
+        let normalTitleHeight = app.staticTexts["Harmonica Practice"].frame.height
+        app.terminate()
         app.launchArguments = [
             "-hasSeenPracticeOnboarding", "YES",
             "-libraryImport.successfulCount", "0",
+            "-ui-test-seed-screen-fit-song",
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
         ]
         app.launch()
@@ -190,6 +324,10 @@ final class PracticeJourneysUITests: XCTestCase {
         let library = app.buttons["Practice library"]
         XCTAssertTrue(library.waitForExistence(timeout: 10))
         XCTAssertTrue(library.isHittable)
+        XCTAssertGreaterThan(app.staticTexts["Harmonica Practice"].frame.height, normalTitleHeight * 1.5)
+        XCTAssertTrue(app.scrollViews["accessible-practice-content"].exists)
+        XCTAssertTrue(app.buttons["Start Practice"].isHittable)
+        attachScreen(app, name: "Scrollable accessibility practice")
         library.tap()
         XCTAssertTrue(app.navigationBars["Practice Library"].waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
@@ -197,6 +335,28 @@ final class PracticeJourneysUITests: XCTestCase {
         XCTAssertTrue(setup.isHittable)
         setup.tap()
         XCTAssertTrue(app.navigationBars["Practice Setup"].waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
+        let dashboard = app.scrollViews["accessible-practice-content"]
+        let skip = app.buttons["Skip"]
+        for _ in 0..<8 {
+            if skip.isHittable { break }
+            dashboard.swipeUp()
+        }
+        XCTAssertTrue(skip.isHittable)
+        XCTAssertTrue(app.buttons["Hear target note"].isHittable)
+        skip.tap()
+        XCTAssertTrue(app.staticTexts["Concert pitch D4"].exists)
+        let details = app.buttons["arrangement-details-button"]
+        for _ in 0..<8 {
+            if details.isHittable { break }
+            dashboard.swipeUp()
+        }
+        XCTAssertTrue(details.isHittable)
+        XCTAssertTrue(app.buttons["Start Practice"].isHittable)
+        attachScreen(app, name: "Readable accessibility progress")
+        details.tap()
+        XCTAssertTrue(app.staticTexts["arrangement-explanation"].waitForExistence(timeout: 5))
+        attachScreen(app, name: "Accessible arrangement details")
     }
 
     func testOnboardingRemainsUsableAtAccessibilityTextSize() {
@@ -210,15 +370,46 @@ final class PracticeJourneysUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.staticTexts["Pick your track"].waitForExistence(timeout: 10))
+        let title = app.staticTexts["Pick your track"]
+        XCTAssertGreaterThan(title.frame.height, 40)
+        let imports = app.staticTexts["Bring Your Own Audio"]
+        for _ in 0..<6 {
+            if imports.isHittable { break }
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(imports.isHittable)
+        XCTAssertTrue(app.buttons["Next"].isHittable)
+        attachScreen(app, name: "Readable accessibility onboarding")
         for title in ["Read harmonica tabs instantly", "Choose how you play", "Tap to listen & score"] {
             let next = app.buttons["Next"]
             XCTAssertTrue(next.isHittable)
             next.tap()
             XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 5))
         }
-        XCTAssertTrue(app.buttons["Skip"].isHittable)
-        app.buttons["Skip"].tap()
+        XCTAssertTrue(app.buttons["onboardingSkipButton"].isHittable)
+        app.buttons["onboardingSkipButton"].tap()
         XCTAssertTrue(app.buttons["Practice setup"].waitForExistence(timeout: 5))
+    }
+
+    func testArrangementDetailsPersistAcrossRelaunch() {
+        let app = launchApp(extraLaunchArguments: ["-ui-test-seed-screen-fit-song"])
+        for launch in 0..<2 {
+            let details = app.buttons["arrangement-details-button"]
+            XCTAssertTrue(details.waitForExistence(timeout: 10))
+            XCTAssertTrue(details.isHittable)
+            details.tap()
+            let explanation = app.staticTexts["arrangement-explanation"]
+            XCTAssertTrue(explanation.waitForExistence(timeout: 5))
+            XCTAssertTrue(explanation.label.contains("Approximate arrangement"))
+            XCTAssertTrue(explanation.label.contains("Transposed -5 semitones"))
+            XCTAssertTrue(explanation.label.contains("Register +2 octaves"))
+            app.buttons["Done"].tap()
+            if launch == 0 {
+                app.terminate()
+                app.launchArguments = ["-hasSeenPracticeOnboarding", "YES", "-libraryImport.successfulCount", "0"]
+                app.launch()
+            }
+        }
     }
 
     func testSavedSongCanBePracticedRenamedAndDeletedAcrossLaunches() {
@@ -280,7 +471,9 @@ final class PracticeJourneysUITests: XCTestCase {
         let app = launchApp(extraLaunchArguments: ["-ui-test-import-chord"])
         let context = app.staticTexts["source-chord-context"]
         XCTAssertTrue(context.waitForExistence(timeout: 20))
-        if app.buttons["Not Now"].waitForExistence(timeout: 4) { app.buttons["Not Now"].tap() }
+        XCTAssertTrue(app.staticTexts["Your song is ready"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["reviewAppButton"].exists)
+        app.buttons["reviewNotNowButton"].tap()
         XCTAssertTrue(context.label.contains("C5 · E5 · G5"))
         XCTAssertTrue(app.staticTexts["Concert pitch C5"].exists)
         app.buttons["Skip"].tap()
@@ -326,6 +519,40 @@ final class PracticeJourneysUITests: XCTestCase {
         app.launchArguments.append(contentsOf: extraLaunchArguments)
         app.launch()
         return app
+    }
+
+    private func assertMainPracticeFits(in app: XCUIApplication) {
+        let viewport = app.frame.insetBy(dx: 0, dy: 1)
+        let target = app.descendants(matching: .any).matching(identifier: "target-note-card").firstMatch
+        let progress = app.descendants(matching: .any).matching(identifier: "progress-track").firstMatch
+        let controls = app.descendants(matching: .any).matching(identifier: "practice-controls").firstMatch
+        for id in ["practice-header", "target-note-card", "progress-track", "practice-controls", "harmonica-comb"] {
+            let element = app.descendants(matching: .any).matching(identifier: id).firstMatch
+            XCTAssertTrue(element.waitForExistence(timeout: 5), id)
+            XCTAssertTrue(viewport.contains(element.frame), "\(id): \(element.frame) outside \(viewport)")
+        }
+        XCTAssertLessThanOrEqual(target.frame.maxY, controls.frame.minY)
+        XCTAssertLessThanOrEqual(progress.frame.maxY, controls.frame.minY)
+        for title in ["Practice library", "Practice setup", "Restart", "Skip", "Hear target note", "Start Practice"] {
+            XCTAssertTrue(app.buttons[title].isHittable, title)
+            XCTAssertTrue(viewport.contains(app.buttons[title].frame), title)
+        }
+        XCTAssertFalse(app.staticTexts["Start practice when you’re ready."].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Approximate arrangement")).firstMatch.exists)
+        XCTAssertEqual(app.scrollViews.count, 0)
+        let source = app.staticTexts["source-chord-context"]
+        if source.exists {
+            XCTAssertTrue(target.frame.contains(source.frame))
+        }
+        let comb = app.descendants(matching: .any).matching(identifier: "harmonica-comb").firstMatch
+        XCTAssertTrue(target.frame.contains(comb.frame))
+    }
+
+    private func attachScreen(_ app: XCUIApplication, name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func assertPracticeColumns(in app: XCUIApplication) {

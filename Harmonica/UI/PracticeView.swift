@@ -40,6 +40,7 @@ struct PracticeView: View {
     @State private var lastMissHapticDate = Date.distantPast
     @State private var hasRestoredPreferences = false
     @State private var reviewPromptMoment: ReviewPromptMoment?
+    @State private var pendingReviewPromptTask: Task<Void, Never>?
 
     private var isPurchaseRequired: Bool {
         viewModel.successfulMusicLibraryImports >= LibraryImportAllowance.freeSongCount
@@ -79,33 +80,52 @@ struct PracticeView: View {
                 guard recordingID != nil else { return }
                 queueReviewPrompt(for: .freestyle)
             }
+            .onChange(of: showOnboarding) { _, presented in
+                if presented {
+                    pendingReviewPromptTask?.cancel()
+                    pendingReviewPromptTask = nil
+                }
+            }
+            .onDisappear {
+                pendingReviewPromptTask?.cancel()
+                pendingReviewPromptTask = nil
+            }
     }
 
     private var practiceScreen: some View {
         GeometryReader { proxy in
             let layout = AdaptivePracticeLayout.resolve(
                 size: proxy.size,
+                usesLargeText: dynamicTypeSize >= .xxLarge,
                 usesAccessibilityText: dynamicTypeSize.isAccessibilitySize
             )
 
             ZStack {
                 backgroundLayer
 
-                VStack(spacing: 0) {
-                    ScrollView {
+                VStack(spacing: layout.contentSpacing) {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        ScrollView {
+                            practiceContent(layout: layout)
+                                .frame(maxWidth: layout.contentMaxWidth)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, layout.horizontalPadding)
+                        }
+                        .accessibilityIdentifier("accessible-practice-content")
+                        .allowsHitTesting(!showOnboarding && !viewModel.isImportingSong && !isPurchaseRequired)
+                    } else {
                         practiceContent(layout: layout)
                             .frame(maxWidth: layout.contentMaxWidth)
-                            .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding(.horizontal, layout.horizontalPadding)
-                            .padding(.top, 8)
-                            .padding(.bottom, 16)
+                            .allowsHitTesting(!showOnboarding && !viewModel.isImportingSong && !isPurchaseRequired)
                     }
-                    .scrollIndicators(.hidden)
-                    .allowsHitTesting(!showOnboarding && !viewModel.isImportingSong && !isPurchaseRequired)
 
-                    controlsPanel(safeAreaBottom: 8, usesCompactLayout: layout.isCompactHeight)
+                    controlsPanel(safeAreaBottom: 0, usesCompactLayout: layout.isCompactHeight)
                         .disabled(showOnboarding || viewModel.isImportingSong || isPurchaseRequired)
                 }
+                .padding(.vertical, 8)
+                .accessibilityElement(children: .contain)
                 .accessibilityHidden(showOnboarding || viewModel.isImportingSong || isPurchaseRequired)
 
                 if viewModel.isImportingSong && !isPurchaseRequired {
@@ -321,6 +341,8 @@ struct PracticeView: View {
                 isFreestyleMode: viewModel.isFreestyleMode,
                 selectedSongIsImported: viewModel.selectedRecordingIsImportedSong,
                 usesCompactLayout: layout.usesCompactHeader,
+                usesDenseLayout: layout.isCompactHeight,
+                preferredTextSize: dynamicTypeSize,
                 onToggleFreestyleMode: handleFreestyleModeToggle,
                 onSelectSong: { _ = selectSongForPractice($0) },
                 onShowSetup: { showSetupSheet = true },
@@ -328,6 +350,7 @@ struct PracticeView: View {
                 onRenameSong: prepareRename,
                 onDeleteSong: prepareDelete
             )
+            .accessibilityHidden(showOnboarding || viewModel.isImportingSong || isPurchaseRequired)
 
             if let notice = viewModel.noticeMessage {
                 noticeBanner(notice)
@@ -344,15 +367,16 @@ struct PracticeView: View {
     @ViewBuilder
     private func guidedContent(layout: AdaptivePracticeLayout) -> some View {
         if layout.usesTwoColumnPractice {
-            HStack(alignment: .top, spacing: layout.contentSpacing) {
-                targetNoteContent(usesCompactLayout: layout.isCompactHeight)
-                    .frame(maxWidth: .infinity, alignment: .top)
+            HStack(spacing: layout.contentSpacing) {
+                targetNoteContent(usesCompactLayout: layout.isCompactHeight, usesHorizontalLayout: layout.usesCompactHeader)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 pitchAndProgressContent
-                    .frame(maxWidth: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else {
             targetNoteContent(usesCompactLayout: layout.isCompactHeight)
+                .frame(maxHeight: .infinity)
             pitchAndProgressContent
         }
     }
@@ -367,13 +391,12 @@ struct PracticeView: View {
         }
     }
 
-    private func targetNoteContent(usesCompactLayout: Bool) -> some View {
+    private func targetNoteContent(usesCompactLayout: Bool, usesHorizontalLayout: Bool = false) -> some View {
         TargetNoteView(
             targetNote: viewModel.currentTargetNote,
             targetHole: viewModel.currentTargetHole,
             sourceNotes: viewModel.currentTargetEvent?.sourceNotes,
-            arrangementExplanation: viewModel.selectedRecording?.notes.isEmpty == true
-                ? "Audio saved • No reliable pitches recovered" : viewModel.selectedRecording?.arrangement?.explanation,
+            hasUnrecoveredAudio: viewModel.selectedRecording?.notes.isEmpty == true,
             detectedPitch: viewModel.detectedPitch,
             matchState: viewModel.matchState,
             isAudioRunning: viewModel.isAudioRunning,
@@ -381,10 +404,12 @@ struct PracticeView: View {
             canProgress: viewModel.selectedFreestyleHasPlayableNotes,
             isComplete: viewModel.isPracticeComplete,
             usesCompactLayout: usesCompactLayout,
+            usesHorizontalLayout: usesHorizontalLayout,
             onRestart: viewModel.startNewAttempt,
             onSkip: viewModel.advanceNote,
             onToggleReferenceNote: handleReferenceNoteToggle
         )
+        .accessibilityHidden(showOnboarding || viewModel.isImportingSong || isPurchaseRequired)
     }
 
     private var pitchAndProgressContent: some View {
@@ -392,8 +417,10 @@ struct PracticeView: View {
             song: viewModel.selectedSong,
             currentNoteIndex: viewModel.currentNoteIndex,
             matchState: viewModel.matchState,
-            layout: viewModel.selectedLayout
+            layout: viewModel.selectedLayout,
+            arrangementExplanation: viewModel.selectedRecording?.arrangement?.explanation
         )
+        .accessibilityHidden(showOnboarding || viewModel.isImportingSong || isPurchaseRequired)
     }
 
     private var freestyleLiveCard: some View {
@@ -413,6 +440,7 @@ struct PracticeView: View {
                 Text(formattedElapsed(viewModel.freestyleElapsed))
                     .font(AppTypography.mono.monospacedDigit())
                     .foregroundStyle(AppColors.textSecondary)
+                    .accessibilityIdentifier("freestyleElapsedTime")
             }
 
             DetectedPitchView(
@@ -430,8 +458,10 @@ struct PracticeView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
+        .frame(maxHeight: .infinity)
         .liquidGlass(cornerRadius: 18, intensity: 0.03)
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("freestyle-live-card")
     }
 
     private var importingOverlay: some View {
@@ -659,6 +689,7 @@ struct PracticeView: View {
 
     private func controlsPanel(safeAreaBottom: CGFloat, usesCompactLayout: Bool) -> some View {
         controlsContent(usesCompactLayout: usesCompactLayout)
+        .accessibilityHidden(showOnboarding || viewModel.isImportingSong || isPurchaseRequired)
         .frame(maxWidth: 760)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
@@ -839,10 +870,18 @@ struct PracticeView: View {
         guard reviewPromptedVersion != version,
               offeredReviewVersion(for: moment) != version,
               reviewPromptMoment == nil,
+              hasSeenOnboarding,
+              !showOnboarding,
               !isPurchaseRequired else { return }
 
-        Task { @MainActor in
-            try? await Task.sleep(for: delay)
+        // Only a completed activity outside the tour can schedule a review offer.
+        pendingReviewPromptTask?.cancel()
+        pendingReviewPromptTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
             guard scenePhase == .active,
                   reviewPromptedVersion != version,
                   offeredReviewVersion(for: moment) != version,

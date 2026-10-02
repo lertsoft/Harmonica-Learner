@@ -2,10 +2,11 @@ import SwiftUI
 
 struct TargetNoteView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let targetNote: String?
     let targetHole: HarmonicaHole?
     var sourceNotes: [String]? = nil
-    var arrangementExplanation: String? = nil
+    var hasUnrecoveredAudio: Bool = false
     let detectedPitch: NotePitch?
     let matchState: NoteMatchState
     let isAudioRunning: Bool
@@ -13,6 +14,7 @@ struct TargetNoteView: View {
     let canProgress: Bool
     let isComplete: Bool
     let usesCompactLayout: Bool
+    var usesHorizontalLayout: Bool = false
     let onRestart: () -> Void
     let onSkip: () -> Void
     let onToggleReferenceNote: () -> Void
@@ -20,78 +22,77 @@ struct TargetNoteView: View {
     @State private var successScale: CGFloat = 1
 
     var body: some View {
-        VStack(spacing: usesCompactLayout ? 8 : 16) {
-            HStack(alignment: .center, spacing: usesCompactLayout ? 8 : 14) {
-                utilityButton("arrow.counterclockwise", label: "Restart", action: onRestart)
-                VStack(spacing: 3) {
-                    Text("PLAY")
-                        .font(AppTypography.sectionLabel)
-                        .foregroundStyle(AppColors.textTertiary)
-                    Text(isComplete ? "Complete" : tabInstruction)
-                        .font(.custom("AvenirNextCondensed-DemiBold", size: usesCompactLayout ? 42 : 58, relativeTo: .largeTitle))
-                        .foregroundStyle(matchState == .hit ? AppColors.hitGradientStart : AppColors.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.55)
-                        .scaleEffect(successScale)
-                    if !usesCompactLayout {
-                        Text(isComplete ? "Nice work — you finished this song" : targetNote.map { "Concert pitch \($0)" } ?? (arrangementExplanation == nil ? "Choose a song to begin" : "No playable notes recovered"))
-                            .font(AppTypography.caption)
-                            .foregroundStyle(AppColors.textSecondary)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .onboardingCoachTarget(.targetNote)
-                utilityButton("forward.end.fill", label: "Skip", action: onSkip)
-            }
-
-            if let sourceNotes, sourceNotes.count > 1 {
-                Text("Arpeggio from \(sourceNotes.joined(separator: " · "))")
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.textSecondary)
+        VStack(spacing: usesCompactLayout ? 6 : 12) {
+            if dynamicTypeSize.isAccessibilitySize {
+                noteInstruction
+                sourceChord
+                comb
+                Text(compactStatusLine)
+                    .font(AppTypography.bodyStrong)
+                    .foregroundStyle(statusColor)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("source-chord-context")
-            }
-            if let arrangementExplanation, !usesCompactLayout {
-                Text(arrangementExplanation)
-                    .font(AppTypography.caption)
-                    .foregroundStyle(AppColors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let targetHole, !usesCompactLayout {
-                HarmonicaCombView(activeHole: targetHole, matchState: matchState)
-            }
-            if !usesCompactLayout {
-                Divider().overlay(Color.white.opacity(0.08))
-            }
-            if usesCompactLayout {
-                HStack(spacing: 10) {
-                    Text(compactStatusLine)
-                        .font(AppTypography.bodyStrong)
-                        .foregroundStyle(statusColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                    Spacer(minLength: 0)
+                HStack {
+                    utilityButton("arrow.counterclockwise", label: "Restart", action: onRestart)
+                    Spacer()
                     referenceButton
+                    Spacer()
+                    utilityButton("forward.end.fill", label: "Skip", action: onSkip)
                 }
             } else {
-                HStack(spacing: 16) {
-                    if isAudioRunning, detectedPitch != nil {
+                Spacer(minLength: 0)
+                if usesHorizontalLayout {
+                    HStack(spacing: 12) {
+                        noteInstruction
+                        VStack(spacing: 4) {
+                            comb
+                            sourceChord
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        utilityButton("arrow.counterclockwise", label: "Restart", action: onRestart)
+                        noteInstruction
+                        utilityButton("forward.end.fill", label: "Skip", action: onSkip)
+                    }
+                    sourceChord
+                    Spacer(minLength: 0)
+                    comb
+                }
+                Spacer(minLength: 0)
+                if !usesCompactLayout {
+                    Divider().overlay(Color.white.opacity(0.08))
+                }
+                HStack(spacing: 10) {
+                    if usesHorizontalLayout {
+                        utilityButton("arrow.counterclockwise", label: "Restart", action: onRestart)
+                    }
+                    if isAudioRunning, detectedPitch != nil, !usesCompactLayout {
                         PitchTargetGauge(pitch: detectedPitch, matchState: matchState, isListening: true)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(statusTitle).font(AppTypography.bodyStrong).foregroundStyle(statusColor)
-                        Text(statusDetail)
-                            .font(AppTypography.caption)
-                            .foregroundStyle(AppColors.textSecondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(usesCompactLayout ? compactStatusLine : statusTitle)
+                            .font(AppTypography.bodyStrong)
+                            .foregroundStyle(statusColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                        if !usesCompactLayout, let statusDetail {
+                            Text(statusDetail)
+                                .font(AppTypography.caption)
+                                .foregroundStyle(AppColors.textSecondary)
+                                .lineLimit(2)
+                        }
                     }
                     Spacer(minLength: 0)
                     referenceButton
+                    if usesHorizontalLayout {
+                        utilityButton("forward.end.fill", label: "Skip", action: onSkip)
+                    }
                 }
             }
         }
-        .padding(usesCompactLayout ? 10 : 16)
+        .padding(usesCompactLayout ? 8 : 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .liquidGlass(cornerRadius: AppMetrics.cardRadius, intensity: 0.035)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("target-note-card")
@@ -102,6 +103,49 @@ struct TargetNoteView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) { successScale = 1 }
             }
+        }
+    }
+
+    private var noteInstruction: some View {
+        VStack(spacing: 3) {
+            Text("PLAY")
+                .font(AppTypography.sectionLabel)
+                .foregroundStyle(AppColors.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            Text(isComplete ? "Complete" : tabInstruction)
+                .font(.custom("AvenirNextCondensed-DemiBold", size: usesCompactLayout ? 42 : 58, relativeTo: .largeTitle))
+                .foregroundStyle(matchState == .hit ? AppColors.hitGradientStart : AppColors.textPrimary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.35)
+                .scaleEffect(successScale)
+            Text(isComplete ? "Nice work — you finished this song" : targetNote.map { "Concert pitch \($0)" } ?? (hasUnrecoveredAudio ? "No playable notes recovered" : "Choose a song to begin"))
+                .font(AppTypography.caption)
+                .foregroundStyle(AppColors.textSecondary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.5)
+        }
+        .frame(maxWidth: .infinity)
+        .onboardingCoachTarget(.targetNote)
+    }
+
+    @ViewBuilder
+    private var sourceChord: some View {
+        if let sourceNotes, sourceNotes.count > 1 {
+            Text("Arpeggio from \(sourceNotes.joined(separator: " · "))")
+                .font(AppTypography.caption)
+                .foregroundStyle(AppColors.textSecondary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.5)
+                .accessibilityIdentifier("source-chord-context")
+        }
+    }
+
+    @ViewBuilder
+    private var comb: some View {
+        if let targetHole {
+            HarmonicaCombView(activeHole: targetHole, matchState: matchState)
+                .accessibilityIdentifier("harmonica-comb")
         }
     }
 
@@ -146,9 +190,9 @@ struct TargetNoteView: View {
         }
     }
 
-    private var statusDetail: String {
+    private var statusDetail: String? {
         if isComplete { return "Restart to practice it again and tighten your accuracy." }
-        guard isAudioRunning else { return "Start practice when you’re ready." }
+        guard isAudioRunning else { return nil }
         guard let detectedPitch else { return "Play one clear hole and hold it steady." }
         let cents = Int(abs(detectedPitch.centsOffset).rounded())
         return matchState == .hit ? "Hold for a moment to advance." : "Heard \(detectedPitch.fullName) • \(cents)¢ off target"
@@ -156,7 +200,7 @@ struct TargetNoteView: View {
 
     private var compactStatusLine: String {
         if isComplete { return "Practice complete" }
-        guard isAudioRunning else { return "Mic off • Start when ready" }
+        guard isAudioRunning else { return "Microphone off" }
         guard let detectedPitch else { return "Listening • Play one clear hole" }
         let cents = Int(abs(detectedPitch.centsOffset).rounded())
         return matchState == .hit ? "In tune • Hold to advance" : "\(detectedPitch.fullName) • \(cents)¢ off target"
@@ -186,6 +230,8 @@ private struct HarmonicaCombView: View {
                             .frame(height: 13)
                         Text("\(hole)")
                             .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                             .foregroundStyle(activeHole.index == hole ? Color.white : AppColors.textTertiary)
                             .frame(maxWidth: .infinity, minHeight: 34)
                             .background(RoundedRectangle(cornerRadius: 7).fill(activeHole.index == hole ? airflowColor.opacity(0.8) : Color.white.opacity(0.06)))

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct HeaderView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var isLibraryPresented = false
     @State private var librarySearchText = ""
     let selectedSong: HarmonicaSong?
@@ -8,6 +9,8 @@ struct HeaderView: View {
     let isFreestyleMode: Bool
     let selectedSongIsImported: Bool
     let usesCompactLayout: Bool
+    var usesDenseLayout: Bool = false
+    var preferredTextSize: DynamicTypeSize = .large
     let onToggleFreestyleMode: () -> Void
     let onSelectSong: (HarmonicaSong) -> Void
     let onShowSetup: () -> Void
@@ -17,16 +20,47 @@ struct HeaderView: View {
 
     var body: some View {
         Group {
-            if usesCompactLayout {
+            if dynamicTypeSize.isAccessibilitySize {
+                accessibleHeader
+            } else if usesCompactLayout {
                 compactHeader
             } else {
                 regularHeader
             }
         }
-        .padding(usesCompactLayout ? 8 : 14)
+        .padding(usesCompactLayout || usesDenseLayout ? 8 : 14)
         .liquidGlass(cornerRadius: AppMetrics.cardRadius, intensity: 0.03)
+        .accessibilityIdentifier("practice-header")
         .sheet(isPresented: $isLibraryPresented) {
             librarySheet
+                .dynamicTypeSize(preferredTextSize)
+        }
+    }
+
+    private var accessibleHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Harmonica Practice")
+                .font(AppTypography.title)
+                .foregroundStyle(AppColors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Listen • Match • Move")
+                .font(AppTypography.caption)
+                .foregroundStyle(AppColors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 12) {
+                libraryButton
+                Button(action: onShowSetup) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(width: AppMetrics.controlHeight, height: AppMetrics.controlHeight)
+                        .background(Circle().fill(Color.white.opacity(0.07)))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(AppColors.textPrimary)
+                .accessibilityLabel("Practice setup")
+            }
+            modePicker
+            contextSummary
         }
     }
 
@@ -60,9 +94,16 @@ struct HeaderView: View {
                 .accessibilityLabel("Practice setup")
             }
 
-            modePicker
-
-            contextSummary
+            if usesDenseLayout {
+                HStack(spacing: 8) {
+                    contextSummary
+                    modePicker
+                        .frame(maxWidth: .infinity)
+                }
+            } else {
+                modePicker
+                contextSummary
+            }
         }
     }
 
@@ -88,20 +129,40 @@ struct HeaderView: View {
         }
     }
 
+    @ViewBuilder
     private var modePicker: some View {
-        Picker("Practice mode", selection: Binding(
-            get: { isFreestyleMode },
-            set: { wantsFreestyle in
-                guard wantsFreestyle != isFreestyleMode else { return }
-                onToggleFreestyleMode()
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 8) {
+                accessibleModeButton("Guided", wantsFreestyle: false)
+                accessibleModeButton("Freestyle", wantsFreestyle: true)
             }
-        )) {
-            Text("Guided").tag(false)
-            Text("Freestyle").tag(true)
+            .onboardingCoachTarget(.practiceStyle)
+        } else {
+            Picker("Practice mode", selection: Binding(
+                get: { isFreestyleMode },
+                set: { wantsFreestyle in
+                    guard wantsFreestyle != isFreestyleMode else { return }
+                    onToggleFreestyleMode()
+                }
+            )) {
+                Text("Guided").tag(false)
+                Text("Freestyle").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityHint("Switches between song practice and free recording")
+            .onboardingCoachTarget(.practiceStyle)
         }
-        .pickerStyle(.segmented)
-        .accessibilityHint("Switches between song practice and free recording")
-        .onboardingCoachTarget(.practiceStyle)
+    }
+
+    private func accessibleModeButton(_ title: String, wantsFreestyle: Bool) -> some View {
+        Button {
+            if wantsFreestyle != isFreestyleMode { onToggleFreestyleMode() }
+        } label: {
+            Text(title)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(StudioControlButtonStyle(isProminent: wantsFreestyle == isFreestyleMode, tint: AppGradients.primary))
+        .accessibilityAddTraits(wantsFreestyle == isFreestyleMode ? .isSelected : [])
     }
 
     private var contextSummary: some View {
@@ -109,11 +170,13 @@ struct HeaderView: View {
             Text(isFreestyleMode ? "Free play" : (selectedSongIsImported ? "Practice line" : "Song"))
                 .font(AppTypography.caption)
                 .foregroundStyle(AppColors.textTertiary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.5)
             Text(isFreestyleMode ? "Capture a new idea" : selectedSong.map(displayName) ?? "Choose a song")
                 .font(AppTypography.bodyStrong)
                 .foregroundStyle(AppColors.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.72)
             }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)

@@ -61,6 +61,7 @@ struct ControlsView: View {
         }
         .padding(usesCompactLayout ? 6 : 10)
         .liquidGlass(cornerRadius: 18, intensity: 0.04)
+        .accessibilityIdentifier("practice-controls")
     }
 
     private var sourceAudioTitle: String {

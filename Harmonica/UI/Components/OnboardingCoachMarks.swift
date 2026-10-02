@@ -46,39 +46,86 @@ struct OnboardingCoachOverlay: View {
                 height: calloutHeight(for: guide, in: proxy.size)
             )
 
-            ZStack {
-                dimmedBackground(cutout: target)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 12) {
+                    progressHeader
+                    calloutContent(
+                        guide,
+                        placement: .below,
+                        caretOffset: proxy.size.width / 2,
+                        isCompact: false
+                    )
+                    .frame(maxWidth: 560)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .padding(16)
+                .background(AppColors.backgroundDeep)
+            } else {
+                ZStack {
+                    dimmedBackground(cutout: target)
 
-                RoundedRectangle(cornerRadius: guide.cornerRadius)
-                    .stroke(accent, lineWidth: 3)
-                    .frame(width: target.width + 12, height: target.height + 12)
-                    .position(x: target.midX, y: target.midY)
-                    .shadow(color: accent.opacity(0.65), radius: 8)
+                    spotlightHighlight(target: target, guide: guide)
 
-                calloutContent(
-                    guide,
-                    placement: callout.placement,
-                    caretOffset: callout.caretOffset
-                )
+                    calloutContent(
+                        guide,
+                        placement: callout.placement,
+                        caretOffset: callout.caretOffset,
+                        isCompact: proxy.size.height < 500
+                    )
                     .frame(width: callout.frame.width, height: callout.frame.height, alignment: .topLeading)
                     .position(x: callout.frame.midX, y: callout.frame.midY)
 
-                if exposesLayoutProbes {
-                    layoutProbe(identifier: "onboarding-highlight-frame", frame: target.insetBy(dx: -6, dy: -6))
-                    layoutProbe(identifier: "onboarding-callout-frame", frame: callout.frame)
-                }
+                    if exposesLayoutProbes {
+                        layoutProbe(identifier: "onboarding-highlight-frame", frame: target.insetBy(dx: -6, dy: -6))
+                        layoutProbe(identifier: "onboarding-callout-frame", frame: callout.frame)
+                    }
 
-                progressHeader
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .frame(maxHeight: .infinity, alignment: .top)
+                    progressHeader
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
         }
         .ignoresSafeArea(edges: .bottom)
         .accessibilityAddTraits(overlayAccessibilityTraits)
     }
 
+    // MARK: - Spotlight Highlight
+    @ViewBuilder
+    private func spotlightHighlight(target: CGRect, guide: Guide) -> some View {
+        if guide.isCircular {
+            let diameter = max(target.width, target.height) + 12
+            Circle()
+                .stroke(
+                    LinearGradient(
+                        colors: [accent, accent.opacity(0.55)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2.5
+                )
+                .frame(width: diameter, height: diameter)
+                .position(x: target.midX, y: target.midY)
+                .shadow(color: accent.opacity(0.65), radius: 10)
+        } else {
+            RoundedRectangle(cornerRadius: guide.cornerRadius)
+                .stroke(
+                    LinearGradient(
+                        colors: [accent, accent.opacity(0.55)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2.5
+                )
+                .frame(width: target.width + 12, height: target.height + 12)
+                .position(x: target.midX, y: target.midY)
+                .shadow(color: accent.opacity(0.65), radius: 10)
+        }
+    }
+
+    // MARK: - Top Navigation Header
     private var progressHeader: some View {
         HStack(spacing: 10) {
             if stepIndex > 0 {
@@ -90,17 +137,32 @@ struct OnboardingCoachOverlay: View {
 
             Spacer()
 
-            Text("QUICK TOUR  \(stepIndex + 1) / \(Self.guides.count)")
-                .font(AppTypography.sectionLabel)
-                .tracking(1.2)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 36)
-                .background(Capsule().fill(Color.black.opacity(0.78)))
+            // Segmented story progress indicator
+            HStack(spacing: 5) {
+                if !dynamicTypeSize.isAccessibilitySize {
+                    ForEach(0..<Self.guides.count, id: \.self) { index in
+                        Capsule()
+                            .fill(index <= stepIndex ? accent : Color.white.opacity(0.22))
+                            .frame(width: index == stepIndex ? 20 : 12, height: 4)
+                            .shadow(color: index == stepIndex ? accent.opacity(0.7) : .clear, radius: 4)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: stepIndex)
+                    }
+                }
+
+                Text("\(stepIndex + 1) / \(Self.guides.count)")
+                    .font(AppTypography.sectionLabel)
+                    .tracking(1.0)
+                    .foregroundStyle(.white.opacity(0.92))
+            }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 36)
+            .background(Capsule().fill(Color.black.opacity(0.75)))
+            .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
 
             Spacer()
 
             Button("Skip") { onFinishWithoutMicrophone() }
+                .accessibilityIdentifier("onboardingSkipButton")
                 .frame(minWidth: 44, minHeight: 44)
         }
         .font(AppTypography.caption.weight(.semibold))
@@ -108,70 +170,326 @@ struct OnboardingCoachOverlay: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Callout Content
     private func calloutContent(
         _ guide: Guide,
         placement: Placement,
-        caretOffset: CGFloat
+        caretOffset: CGFloat,
+        isCompact: Bool
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(guide.title)
-                        .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(guide.lines, id: \.self) { line in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text("•")
-                                    .foregroundStyle(accent)
-                                Text(LocalizedStringKey(line))
-                                    .foregroundStyle(.white.opacity(0.96))
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .font(.system(.body, design: .rounded).weight(.medium))
-                            .lineSpacing(3)
-                        }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    ScrollView {
+                        calloutBody(guide, isCompact: false)
                     }
+                    .scrollIndicators(.hidden)
+                    .scrollBounceBehavior(.basedOnSize)
+                    calloutAction
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ViewThatFits(in: .vertical) {
+                    fixedCalloutContent(guide, isCompact: isCompact)
+                    fixedCalloutContent(guide, isCompact: true)
+                }
             }
-            .scrollIndicators(.hidden)
-
-            Button(action: stepIndex == Self.guides.count - 1 ? onFinishWithMicrophone : onNext) {
-                Text(stepIndex == Self.guides.count - 1 ? "Allow Mic & Start Playing" : "Next")
-                    .font(AppTypography.bodyStrong)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-            }
-            .buttonStyle(StudioControlButtonStyle(isProminent: true, tint: AppGradients.primary))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, placement == .trailing ? 30 : 18)
-        .padding(.trailing, placement == .leading ? 30 : 18)
-        .padding(.top, placement == .below ? 28 : 18)
-        .padding(.bottom, placement == .above ? 28 : 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.leading, placement == .trailing ? (isCompact ? 24 : 30) : (isCompact ? 14 : 18))
+        .padding(.trailing, placement == .leading ? (isCompact ? 24 : 30) : (isCompact ? 14 : 18))
+        .padding(.top, placement == .below ? (isCompact ? 24 : 28) : (isCompact ? 14 : 18))
+        .padding(.bottom, placement == .above ? (isCompact ? 24 : 28) : (isCompact ? 14 : 18))
         .background {
-            TooltipBubbleShape(placement: placement, caretOffset: caretOffset)
-                .fill(Color.black.opacity(0.95))
-                .overlay {
-                    TooltipBubbleShape(placement: placement, caretOffset: caretOffset)
-                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.48), radius: 18, y: 8)
+            ZStack {
+                TooltipBubbleShape(placement: placement, caretOffset: caretOffset)
+                    .fill(AppColors.backgroundMid.opacity(0.8))
+
+                TooltipBubbleShape(placement: placement, caretOffset: caretOffset)
+                    .fill(.ultraThinMaterial)
+
+                TooltipBubbleShape(placement: placement, caretOffset: caretOffset)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.09), Color.clear],
+                            startPoint: .top,
+                            endPoint: .center
+                        )
+                    )
+
+                TooltipBubbleShape(placement: placement, caretOffset: caretOffset)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.38),
+                                Color.white.opacity(0.12),
+                                Color.white.opacity(0.04)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+            .shadow(color: .black.opacity(0.48), radius: 22, y: 8)
+            .shadow(color: accent.opacity(0.12), radius: 16)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("onboarding-callout")
+    }
+
+    private func fixedCalloutContent(_ guide: Guide, isCompact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: isCompact ? 6 : 10) {
+            calloutBody(guide, isCompact: isCompact)
+            Spacer(minLength: 0)
+            calloutAction
         }
     }
 
+    private func calloutBody(_ guide: Guide, isCompact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: isCompact ? 6 : 10) {
+            HStack {
+                Text(guide.badge.uppercased())
+                    .font(.system(.caption2, design: .rounded).bold())
+                    .tracking(0.8)
+                    .foregroundStyle(accent)
+                    .padding(.horizontal, isCompact ? 7 : 9)
+                    .padding(.vertical, isCompact ? 3 : 4)
+                    .background(
+                        Capsule()
+                            .fill(accent.opacity(0.16))
+                            .overlay(Capsule().stroke(accent.opacity(0.35), lineWidth: 1))
+                    )
+
+                Spacer()
+
+                Text("\(stepIndex + 1) of \(Self.guides.count)")
+                    .font(.system(.caption2, design: .rounded).weight(.semibold))
+                    .foregroundStyle(AppColors.textTertiary)
+            }
+
+            Text(guide.title)
+                .font(CoachTypography.title)
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+            stepSpecificContent(for: stepIndex, isCompact: isCompact)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var calloutAction: some View {
+        Button(action: stepIndex == Self.guides.count - 1 ? onFinishWithMicrophone : onNext) {
+            Text(stepIndex == Self.guides.count - 1 ? "Allow Mic & Start Playing" : "Next")
+                .font(AppTypography.bodyStrong)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 46)
+        }
+        .buttonStyle(StudioControlButtonStyle(isProminent: true, tint: AppGradients.primary))
+    }
+
+    // MARK: - Step Visual Components
+    @ViewBuilder
+    private func stepSpecificContent(for index: Int, isCompact: Bool) -> some View {
+        switch index {
+        case 0:
+            // Step 1: Built-in songs and supported audio sources.
+            VStack(spacing: isCompact ? 4 : 8) {
+                featureRow(
+                    symbol: "music.note.list",
+                    tint: AppColors.cyanAccent,
+                    title: "Built-In Classics",
+                    subtitle: "Curated starter songs and beginner melodies ready to play",
+                    isCompact: isCompact
+                )
+
+                featureRow(
+                    symbol: "square.and.arrow.down",
+                    tint: AppColors.hitGradientStart,
+                    title: "Bring Your Own Audio",
+                    subtitle: "Import audio from Files or Music Library, record a song, or paste a supported song link",
+                    isCompact: isCompact
+                )
+            }
+
+        case 1:
+            // Step 2: Tab Notation 101 (Visual breath pills + emerald match cue)
+            VStack(spacing: isCompact ? 4 : 8) {
+                HStack(spacing: isCompact ? 6 : 10) {
+                    // Blow pill
+                    VStack(spacing: isCompact ? 2 : 3) {
+                        Text("+ 1")
+                            .font(CoachTypography.example)
+                            .foregroundStyle(AppColors.cyanAccent)
+                        Text("💨 BLOW")
+                            .font(CoachTypography.featureTitle)
+                            .foregroundStyle(.white)
+                        Text("Exhale out")
+                            .font(CoachTypography.body.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.72))
+                    }
+                    .padding(.vertical, isCompact ? 6 : 8)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(AppColors.cyanAccent.opacity(0.15))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppColors.cyanAccent.opacity(0.4), lineWidth: 1))
+                    )
+
+                    // Draw pill
+                    VStack(spacing: isCompact ? 2 : 3) {
+                        Text("− 1")
+                            .font(CoachTypography.example)
+                            .foregroundStyle(AppColors.hitGradientStart)
+                        Text("🌬️ DRAW")
+                            .font(CoachTypography.featureTitle)
+                            .foregroundStyle(.white)
+                        Text("Inhale in")
+                            .font(CoachTypography.body.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.72))
+                    }
+                    .padding(.vertical, isCompact ? 6 : 8)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(AppColors.hitGradientStart.opacity(0.15))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppColors.hitGradientStart.opacity(0.4), lineWidth: 1))
+                    )
+                }
+
+                // Match confirmation badge
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(AppColors.hitGradientStart)
+                        .frame(width: 7, height: 7)
+                        .shadow(color: AppColors.hitGradientStart, radius: 4)
+
+                    Text("Target hole turns emerald green when your pitch matches!")
+                        .font(CoachTypography.body.weight(.medium))
+                        .foregroundStyle(AppColors.hitGradientStart)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, isCompact ? 5 : 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(AppColors.hitGradientStart.opacity(0.1))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.hitGradientStart.opacity(0.25), lineWidth: 1))
+                )
+            }
+
+        case 2:
+            // Step 3: Practice Modes (Guided vs Freestyle jam, no truncation)
+            VStack(spacing: isCompact ? 4 : 8) {
+                featureRow(
+                    symbol: "target",
+                    tint: AppColors.cyanAccent,
+                    title: "Guided Mode",
+                    subtitle: "Note-by-note interactive sheet tabs with live pitch detection & auto-scroll",
+                    isCompact: isCompact
+                )
+
+                featureRow(
+                    symbol: "waveform.and.mic",
+                    tint: Color(red: 0.75, green: 0.55, blue: 0.98),
+                    title: "Freestyle Jam",
+                    subtitle: "Play anything freely; the app listens and auto-transcribes your tabs live",
+                    isCompact: isCompact
+                )
+            }
+
+        default:
+            // Step 4: Microphone & Audio Engine (Trust & Privacy guarantee)
+            VStack(spacing: isCompact ? 4 : 8) {
+                featureRow(
+                    symbol: "waveform",
+                    tint: AppColors.cyanAccent,
+                    title: "Real-Time Pitch Detection",
+                    subtitle: "Live pitch feedback helps you match the target note and its blow or draw hole",
+                    isCompact: isCompact
+                )
+
+                HStack(spacing: 10) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: isCompact ? 14 : 16, weight: .semibold))
+                        .foregroundStyle(AppColors.hitGradientStart)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("100% On-Device & Private")
+                            .font(CoachTypography.featureTitle)
+                            .foregroundStyle(.white)
+
+                        Text("Microphone audio never leaves your phone. Zero cloud processing.")
+                            .font(CoachTypography.body)
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
+                }
+                .padding(isCompact ? 8 : 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                )
+            }
+        }
+    }
+
+    private func featureRow(
+        symbol: String,
+        tint: Color,
+        title: String,
+        subtitle: String,
+        isCompact: Bool
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: isCompact ? 13 : 14, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: isCompact ? 26 : 30, height: isCompact ? 26 : 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(tint.opacity(0.18))
+                )
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(CoachTypography.featureTitle)
+                    .foregroundStyle(.white)
+
+                Text(subtitle)
+                    .font(CoachTypography.body)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(isCompact ? 5 : 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.04))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.07), lineWidth: 1))
+        )
+    }
+
     private func dimmedBackground(cutout: CGRect) -> some View {
-        Color.black.opacity(0.68)
+        Color.black.opacity(0.72)
             .mask {
                 Rectangle()
                     .overlay {
-                        RoundedRectangle(cornerRadius: guideForCurrentStep.cornerRadius)
-                            .frame(width: cutout.width + 18, height: cutout.height + 18)
-                            .position(x: cutout.midX, y: cutout.midY)
-                            .blendMode(.destinationOut)
+                        if guideForCurrentStep.isCircular {
+                            let diameter = max(cutout.width, cutout.height) + 16
+                            Circle()
+                                .frame(width: diameter, height: diameter)
+                                .position(x: cutout.midX, y: cutout.midY)
+                                .blendMode(.destinationOut)
+                        } else {
+                            RoundedRectangle(cornerRadius: guideForCurrentStep.cornerRadius)
+                                .frame(width: cutout.width + 16, height: cutout.height + 16)
+                                .position(x: cutout.midX, y: cutout.midY)
+                                .blendMode(.destinationOut)
+                        }
                     }
                     .compositingGroup()
             }
@@ -204,8 +522,13 @@ struct OnboardingCoachOverlay: View {
     }
 
     private func calloutHeight(for guide: Guide, in size: CGSize) -> CGFloat {
-        let maximumHeight = max(180, size.height - 86)
-        let desiredHeight = dynamicTypeSize.isAccessibilitySize ? guide.height * 1.35 : guide.height
+        let isLandscape = size.width > size.height
+        let topMargin: CGFloat = dynamicTypeSize.isAccessibilitySize ? 72 : 64
+        let bottomMargin: CGFloat = 22
+        let maximumHeight = max(180, size.height - topMargin - bottomMargin)
+        let baseHeight = isLandscape ? min(guide.height, 300) : guide.height
+        let scale: CGFloat = dynamicTypeSize.isAccessibilitySize ? (isLandscape ? 1.0 : 1.15) : 1.0
+        let desiredHeight = baseHeight * scale
         return min(desiredHeight, maximumHeight)
     }
 
@@ -216,7 +539,7 @@ struct OnboardingCoachOverlay: View {
         height: CGFloat
     ) -> CalloutLayout {
         let horizontalMargin: CGFloat = 19
-        let topMargin: CGFloat = 64
+        let topMargin: CGFloat = dynamicTypeSize.isAccessibilitySize ? 72 : 64
         let bottomMargin: CGFloat = 22
         let gap: CGFloat = 14
         let viewport = CGRect(
@@ -458,48 +781,56 @@ struct OnboardingCoachOverlay: View {
         }
     }
 
+    // Typography matches the tab-notation step at every card density.
+    // Compact cards reduce spacing, never the text size.
+    private enum CoachTypography {
+        static let title: Font = .system(.title2, design: .rounded).bold()
+        static let example: Font = .system(.title3, design: .rounded).bold()
+        static let featureTitle: Font = .system(.caption, design: .rounded).bold()
+        static let body: Font = .caption
+    }
+
     private struct Guide {
+        let badge: String
         let title: String
-        let lines: [String]
         let placement: Placement
+        let isCircular: Bool
         let cornerRadius: CGFloat
         let height: CGFloat
     }
 
     private static let guides: [Guide] = [
         Guide(
+            badge: "Song Library",
             title: "Pick your track",
-            lines: ["Explore built-in classics, import your own tabs, or return to recent favorites."],
             placement: .below,
+            isCircular: true,
             cornerRadius: 24,
-            height: 230
+            height: 335
         ),
         Guide(
+            badge: "Tab Notation 101",
             title: "Read harmonica tabs instantly",
-            lines: ["**+** means blow out, **−** means draw in. Match the target hole and hold the note until it turns green."],
             placement: .below,
-            cornerRadius: 14,
-            height: 260
-        ),
-        Guide(
-            title: "Choose how you play",
-            lines: [
-                "**Guided:** Follow songs note by note with live pitch feedback.",
-                "**Freestyle:** Play anything; the app tracks and transcribes your notes."
-            ],
-            placement: .below,
-            cornerRadius: 14,
-            height: 270
-        ),
-        Guide(
-            title: "Tap to listen & score",
-            lines: [
-                "Tap **Start Practice** to activate real-time pitch detection. The app only listens when you're ready.",
-                "Pitch detection happens entirely on-device."
-            ],
-            placement: .above,
+            isCircular: false,
             cornerRadius: 16,
-            height: 280
+            height: 315
+        ),
+        Guide(
+            badge: "Practice Modes",
+            title: "Choose how you play",
+            placement: .below,
+            isCircular: false,
+            cornerRadius: 14,
+            height: 335
+        ),
+        Guide(
+            badge: "Audio Engine",
+            title: "Tap to listen & score",
+            placement: .above,
+            isCircular: false,
+            cornerRadius: 16,
+            height: 335
         )
     ]
 }

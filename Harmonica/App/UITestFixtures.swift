@@ -15,6 +15,10 @@ enum UITestFixtures {
             ].forEach(defaults.removeObject(forKey:))
         }
 
+        if arguments.contains("-ui-test-seed-screen-fit-song") {
+            seedScreenFitSong()
+        }
+
         guard arguments.contains("-ui-test-seed-recording") else { return }
         let id = UUID(uuidString: "84781077-38A0-43E9-B6FA-388D1648D277")!
         let store = FreestyleRecordingStore()
@@ -33,6 +37,34 @@ enum UITestFixtures {
             duration: 1
         )
         try? store.save(recording)
+    }
+
+    /// Matches the dense imported-song screen without depending on audio analysis.
+    private static func seedScreenFitSong() {
+        let id = UUID(uuidString: "DB6AE055-4365-4478-A155-D1108A3AA565")!
+        let recording = FreestyleRecording(
+            id: id,
+            title: "songs for women",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            key: "C",
+            layoutRawValue: HarmonicaLayout.diatonicC.rawValue,
+            audioFileName: nil,
+            notes: (0..<1_405).map { index in
+                HarmonicaNoteEvent(
+                    note: index.isMultiple(of: 2) ? "C4" : "D4",
+                    duration: 0.5,
+                    hole: index.isMultiple(of: 2) ? "1B" : "1D",
+                    sourceNotes: ["D#2", "G#2"]
+                )
+            },
+            duration: 702.5,
+            source: .importedSong,
+            arrangement: HarmonicaArrangementSummary(
+                transpositionSemitones: -5, detectedChordCount: 412, octaveShift: 2
+            )
+        )
+        try? FreestyleRecordingStore().save(recording)
+        UserDefaults.standard.set(recording.asSong.id, forKey: "practice.selectedSongID")
     }
 
     /// Exercises the real local audio import path, not preconstructed tablature.

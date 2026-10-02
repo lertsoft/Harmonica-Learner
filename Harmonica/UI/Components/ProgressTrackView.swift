@@ -2,10 +2,13 @@ import SwiftUI
 
 struct ProgressTrackView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let song: HarmonicaSong?
     let currentNoteIndex: Int
     let matchState: NoteMatchState
     let layout: HarmonicaLayout
+    var arrangementExplanation: String? = nil
+    @State private var showsArrangementDetails = false
 
     @ScaledMetric(relativeTo: .body) private var scaledNoteWidth: CGFloat = 58
     @ScaledMetric(relativeTo: .body) private var scaledNoteHeight: CGFloat = 58
@@ -24,25 +27,27 @@ struct ProgressTrackView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(displaySongTitle)
-                    .font(AppTypography.bodyStrong)
-                    .foregroundStyle(AppColors.textPrimary)
-                    .lineLimit(1)
-
-                Spacer()
-
-                if let song {
-                    Text("\(min(currentNoteIndex + 1, song.notes.count))/\(song.notes.count)")
-                        .font(AppTypography.caption.monospacedDigit())
-                        .foregroundStyle(AppColors.textSecondary)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    trackTitle
+                    HStack {
+                        trackCount
+                        Spacer()
+                        arrangementButton
+                    }
+                }
+            } else {
+                HStack {
+                    trackTitle
+                    Spacer(minLength: 4)
+                    trackCount
+                    arrangementButton
                 }
             }
 
-            GeometryReader { geometry in
-                let centerX = geometry.size.width / 2
-                ZStack {
-                    ForEach(visibleIndices, id: \.self) { index in
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 10) {
+                    ForEach(visibleIndices.filter { $0 >= currentNoteIndex }, id: \.self) { index in
                         let note = song?.notes[index]
                         NoteChipView(
                             note: note?.note ?? "",
@@ -52,23 +57,42 @@ struct ProgressTrackView: View {
                             position: index + 1,
                             total: song?.notes.count ?? 0
                         )
-                        .frame(width: noteWidth)
-                        .position(
-                            x: centerX + CGFloat(index - currentNoteIndex) * (noteWidth + noteSpacing),
-                            y: noteHeight / 2
-                        )
                     }
                 }
-                .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.82), value: currentNoteIndex)
-            }
-            .frame(height: noteHeight)
-            .mask(
-                LinearGradient(
-                    colors: [.clear, .white, .white, .white, .clear],
-                    startPoint: .leading,
-                    endPoint: .trailing
+            } else {
+                GeometryReader { geometry in
+                    let centerX = geometry.size.width / 2
+                    ZStack {
+                        ForEach(visibleIndices.filter { index in
+                            abs(CGFloat(index - currentNoteIndex) * (noteWidth + noteSpacing)) + noteWidth / 2 <= centerX
+                        }, id: \.self) { index in
+                            let note = song?.notes[index]
+                            NoteChipView(
+                                note: note?.note ?? "",
+                                hole: note.flatMap { layout.hole(for: $0.note) },
+                                state: chipState(for: index),
+                                isActive: index == currentNoteIndex,
+                                position: index + 1,
+                                total: song?.notes.count ?? 0
+                            )
+                            .frame(width: noteWidth)
+                            .position(
+                                x: centerX + CGFloat(index - currentNoteIndex) * (noteWidth + noteSpacing),
+                                y: noteHeight / 2
+                            )
+                        }
+                    }
+                    .animation(reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.82), value: currentNoteIndex)
+                }
+                .frame(height: noteHeight)
+                .mask(
+                    LinearGradient(
+                        colors: [.clear, .white, .white, .white, .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
                 )
-            )
+            }
 
             progressBar
         }
@@ -77,6 +101,61 @@ struct ProgressTrackView: View {
         .liquidGlass(cornerRadius: 16, intensity: 0.03)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("progress-track")
+        .sheet(isPresented: $showsArrangementDetails) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(arrangementExplanation ?? "")
+                            .accessibilityIdentifier("arrangement-explanation")
+                        Text("Practice notes are adapted for your harmonica. Transposition and register changes can make them differ from the original audio.")
+                    }
+                    .font(.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                }
+                .navigationTitle("Arrangement Details")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showsArrangementDetails = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private var trackTitle: some View {
+        Text(displaySongTitle)
+            .font(AppTypography.bodyStrong)
+            .foregroundStyle(AppColors.textPrimary)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var trackCount: some View {
+        if let song {
+            Text("\(min(currentNoteIndex + 1, song.notes.count))/\(song.notes.count)")
+                .font(AppTypography.caption.monospacedDigit())
+                .foregroundStyle(AppColors.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.5)
+        }
+    }
+
+    @ViewBuilder
+    private var arrangementButton: some View {
+        if arrangementExplanation != nil {
+            Button { showsArrangementDetails = true } label: {
+                Image(systemName: "info.circle")
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Arrangement details")
+            .accessibilityIdentifier("arrangement-details-button")
+        }
     }
 
     private var progressBar: some View {
@@ -125,6 +204,7 @@ enum NoteChipState {
 
 struct NoteChipView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let note: String
     let hole: HarmonicaHole?
     let state: NoteChipState
@@ -135,7 +215,7 @@ struct NoteChipView: View {
     var body: some View {
         VStack(spacing: 1) {
             Text(tabText)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(dynamicTypeSize.isAccessibilitySize ? .system(.title3, design: .rounded).bold() : .system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(textColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -145,7 +225,7 @@ struct NoteChipView: View {
                     .font(AppTypography.caption)
                     .foregroundStyle(textColor.opacity(0.75))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.62)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.62)
             }
         }
         .frame(maxWidth: .infinity)
