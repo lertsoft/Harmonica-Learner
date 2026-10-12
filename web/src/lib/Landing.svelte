@@ -1,9 +1,14 @@
 <script lang="ts">
 	import { APP_URL, SONGS } from "$lib/content";
+	import { resolve } from "$app/paths";
+	import FaqList from "$lib/components/FaqList.svelte";
+	import { FAQS } from "$lib/faq";
 	import AppPhoneMockup from "$lib/components/AppPhoneMockup.svelte";
 	import InteractiveHarmonica from "$lib/components/InteractiveHarmonica.svelte";
 	import ToleranceMeterDemo from "$lib/components/ToleranceMeterDemo.svelte";
 	import SongConverterDemo from "$lib/components/SongConverterDemo.svelte";
+	import SiteNav from "$lib/components/SiteNav.svelte";
+	import SiteFooter from "$lib/components/SiteFooter.svelte";
 
 	interface Props {
 		theme?: "dark" | "light";
@@ -11,17 +16,7 @@
 	}
 
 	let { theme = "dark", onToggleTheme }: Props = $props();
-
-	function handleKeydown(e: KeyboardEvent) {
-		if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName))
-			return;
-		if (e.key.toLowerCase() === "t" && onToggleTheme) {
-			onToggleTheme();
-		}
-	}
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 <div class="bubbly-root" class:theme-light={theme === "light"}>
 	<!-- Cheerful Floating Bubble Accents -->
@@ -30,46 +25,7 @@
 	<div class="ambient-bubble bubble-3" aria-hidden="true"></div>
 
 	<!-- Top Friendly Navigation -->
-	<header class="bubbly-nav">
-		<div class="nav-wrapper">
-			<a href="#top" class="bubbly-brand">
-				<div class="brand-mascot-emoji">🎵</div>
-				<span class="brand-text"
-					>Harmonica: <span class="pop-highlight">Learn to Play</span
-					></span
-				>
-				<span class="cute-tag">Pocket Coach 🎈</span>
-			</a>
-
-			<nav class="nav-links">
-				<a href="#how">How It Works</a>
-				<a href="#play">Virtual Harp</a>
-				<a href="#songs">Songs</a>
-			</nav>
-
-			<div class="nav-actions-group">
-				{#if onToggleTheme}
-					<button
-						class="nav-theme-btn"
-						onclick={onToggleTheme}
-						aria-label="Toggle light or dark theme"
-						title="Toggle Light/Dark (Press T)"
-					>
-						<span class="theme-icon"
-							>{theme === "dark" ? "☀️" : "🌙"}</span
-						>
-						<span class="theme-label"
-							>{theme === "dark" ? "Light" : "Dark"}</span
-						>
-					</button>
-				{/if}
-				<a href={APP_URL} class="squishy-pill-cta">
-					<span>Get Started Free</span>
-					<span class="emoji-bounce">✨</span>
-				</a>
-			</div>
-		</div>
-	</header>
+	<SiteNav activePage="home" />
 
 	<!-- Hero Section: Friendly, Bubbly & Welcoming -->
 	<section class="bubbly-hero" id="top">
@@ -83,18 +39,18 @@
 
 			<h1 class="bubbly-title">
 				Learn the songs you love on harmonica ♪ <span
-					class="gradient-pop">one happy note at a time!</span
+					class="gradient-pop">one note at a time!</span
 				>
 			</h1>
 
 			<p class="bubbly-lead">
-				Pick up any 10-hole Key of C harmonica. Harmonica Learner turns
-				the music you already own or create into playful tabs, listens
-				through your mic, and cheers you on as you play!
+				Start with a built-in song on your 10-hole C harmonica. Follow
+				the hole and breath cues, hear a reference note, and use live
+				pitch feedback to find the right sound.
 			</p>
 
 			<div class="hero-buttons-row">
-				<a href={APP_URL} class="bubbly-primary-btn">
+				<a href={APP_URL || "#download"} class="bubbly-primary-btn">
 					<svg
 						class="apple-glyph"
 						viewBox="0 0 24 24"
@@ -104,7 +60,7 @@
 							d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.76 1.04-1.82.93-2.87-.9.04-2 .6-2.64 1.36-.57.65-.98 1.73-.85 2.76 1.01.08 1.94-.49 2.56-1.25z"
 						/>
 					</svg>
-					<span>Download for iPhone</span>
+					<span>Get the app</span>
 					<span class="btn-star">⭐</span>
 				</a>
 				<a href="#play" class="bubbly-ghost-btn">
@@ -121,11 +77,11 @@
 				</div>
 				<div class="spec-pill">
 					<span class="label">Pitch Detection</span>
-					<span class="val">Real-time (Offline DSP)</span>
+					<span class="val">On-device feedback</span>
 				</div>
 				<div class="spec-pill">
-					<span class="label">Audio Engine</span>
-					<span class="val">Zero Latency YIN</span>
+					<span class="label">Practice modes</span>
+					<span class="val">Guided & Freestyle</span>
 				</div>
 			</div>
 		</div>
@@ -143,8 +99,8 @@
 			<div class="floating-sticker sticker-right">
 				<span class="sticker-emoji">⭐</span>
 				<div>
-					<strong>3 Hits in a Row!</strong>
-					<span>Auto-advances next note</span>
+					<strong>Hold it steady</strong>
+					<span>Then move to the next note</span>
 				</div>
 			</div>
 
@@ -152,12 +108,15 @@
 				<span class="sticker-emoji">🎉</span>
 				<div>
 					<strong>In Tune!</strong>
-					<span>Pitch locked</span>
+					<span>See your pitch feedback</span>
 				</div>
 			</div>
 
 			<div class="phone-holder">
-				<AppPhoneMockup {theme} scale={0.98} />
+				<AppPhoneMockup {theme} scale={1} />
+				<p class="preview-caption">
+					Interactive illustration · synthesized audio
+				</p>
 			</div>
 		</div>
 	</section>
@@ -166,10 +125,10 @@
 	<section class="bubbly-section" id="how">
 		<div class="section-center-head">
 			<div class="bubble-section-pill">HOW IT WORKS</div>
-			<h2>Playing music should feel like play.</h2>
+			<h2>From your first note to a whole melody.</h2>
 			<p>
-				No complicated sheet music. Just 3 friendly steps from your
-				playlist to your first melody.
+				Start with a built-in song or add your own audio. Read the tabs,
+				then practice one note at a time.
 			</p>
 		</div>
 
@@ -177,11 +136,11 @@
 			<div class="candy-step-card step-card-1">
 				<div class="step-badge-circle">01</div>
 				<div class="step-illu-emoji">🎧</div>
-				<h3>Drop in Any Song</h3>
+				<h3>Choose a song</h3>
 				<p>
-					Drop any song from you music library. Our friendly audio
-					helper isolates the vocal melody and maps it to your
-					harmonica.
+					Choose a beginner song, drop any song from your music
+					library, or record a song playing nearby. Audio becomes a
+					suggested practice line and are mapped to your harmonica.
 				</p>
 			</div>
 
@@ -198,10 +157,10 @@
 			<div class="candy-step-card step-card-3">
 				<div class="step-badge-circle">03</div>
 				<div class="step-illu-emoji">⭐</div>
-				<h3>Get Star Combos</h3>
+				<h3>Match and move</h3>
 				<p>
-					Your phone listens as you play. Land 3 steady notes in a row
-					and the app automatically steps to the next note!
+					Your device listens as you play. Land 3 steady notes in a
+					row and the app automatically steps to the next note!
 				</p>
 			</div>
 		</div>
@@ -210,11 +169,11 @@
 	<!-- Dual Practice Engine (Guided vs Freestyle) from Studio Pro -->
 	<section class="bubbly-section" id="modes">
 		<div class="section-center-head">
-			<div class="bubble-section-pill">DUAL PRACTICE ENGINE</div>
-			<h2>Two distinct ways to play & practice.</h2>
+			<div class="bubble-section-pill">PRACTICE MODES</div>
+			<h2>Follow a song. Or save your own riff.</h2>
 			<p>
-				Switch freely between structured note-by-note lessons and an
-				unrestricted jamming studio.
+				Use Guided mode for a saved melody and Freestyle for recording
+				your own ideas.
 			</p>
 		</div>
 
@@ -224,30 +183,30 @@
 				<div class="mode-badge-pill guided-badge">GUIDED PRACTICE</div>
 				<h3>Listen • Match • Move</h3>
 				<p>
-					Follow melodies note-by-note. The app listens to your
-					microphone and requires 3 steady pitch hits before advancing
-					to the next note.
+					Follow melodies note by note. The app listens to your
+					microphone and moves on when you hold the target note
+					steadily in tune.
 				</p>
 				<div class="mode-bullets">
 					<div class="b-item">
 						<span class="check-bubble">✓</span>
 						<span
-							><strong>Exact Hole & Airflow Cues:</strong> Highlighting
-							+4 Blow (↑) or -4 Draw (↓) to eliminate confusion.</span
+							><strong>Hole and breath cues:</strong> Highlighting
+							+4 Blow (↑) or -4 Draw (↓) as you play.</span
 						>
 					</div>
 					<div class="b-item">
 						<span class="check-bubble">✓</span>
 						<span
-							><strong>3-Hit Auto Progression:</strong> Keeps your
-							rhythm flowing without ever touching your phone.</span
+							><strong>Steady-note auto-advance:</strong> Move to the
+							next note when your pitch settles.</span
 						>
 					</div>
 					<div class="b-item">
 						<span class="check-bubble">✓</span>
 						<span
-							><strong>Visual Song Queue:</strong> Track every bar
-							and phrase with step-by-step progress bar.</span
+							><strong>Song progress:</strong> See the notes ahead
+							and how far you have played.</span
 						>
 					</div>
 				</div>
@@ -282,8 +241,8 @@
 					<div class="b-item">
 						<span class="check-bubble">✓</span>
 						<span
-							><strong>Microtonal Bend Telemetry:</strong> Perfect
-							for practicing half-step and whole-step blues bends.</span
+							><strong>Saved practice lines:</strong> Return to a recorded
+							riff for guided practice.</span
 						>
 					</div>
 				</div>
@@ -295,10 +254,11 @@
 	<section class="bubbly-section" id="play">
 		<div class="section-center-head">
 			<div class="bubble-section-pill">PLAYABLE VIRTUAL HARP</div>
-			<h2>Tap any hole to make some noise!</h2>
+			<h2>Hear the notes on a C harmonica.</h2>
 			<p>
 				Click on any of the holes or press keys 1 through 0 on your
-				keyboard to hear real acoustic Harmonica sounds.
+				keyboard to hear synthesized harmonica-style tones. Use the Blow
+				and Draw buttons to change breath direction.
 			</p>
 		</div>
 
@@ -310,12 +270,13 @@
 	<!-- Instant Song-to-Tab Converter Demo from Studio/HUD -->
 	<section class="bubbly-section" id="converter">
 		<div class="section-center-head">
-			<div class="bubble-section-pill">INSTANT TAB CONVERTER</div>
-			<h2>Turn any song in your music library into playable songs</h2>
+			<div class="bubble-section-pill">SAMPLE ARRANGEMENT</div>
+			<h2>Explore a sample harmonica arrangement.</h2>
 			<p>
-				Try the interactive converter below: pick a classic track or
-				paste a link to watch the melody map to a 10-hole Key of C
-				harmonica!
+				Choose a preset and hear a synthesized preview. This browser
+				example does not analyze links or record your microphone. In the
+				app, imported arrangements may change key or register; results
+				vary with the recording.
 			</p>
 		</div>
 
@@ -327,11 +288,11 @@
 	<!-- Friendly Song Library with Pro Metrics -->
 	<section class="bubbly-section" id="songs">
 		<div class="section-center-head">
-			<div class="bubble-section-pill">FUN STARTER SONGS</div>
-			<h2>7 Songs you can play on day one.</h2>
+			<div class="bubble-section-pill">BUILT-IN SONGS</div>
+			<h2>7 Songs to start practicing.</h2>
 			<p>
-				Jump right into cheerful beginner tunes and classic blues licks
-				built right into the app.
+				Jump right into beginner tunes and classic blues licks built
+				right into the app.
 			</p>
 		</div>
 
@@ -358,8 +319,8 @@
 	<!-- Adaptive Pitch Window (Friendly Explanation) -->
 	<section class="bubbly-section" id="tuner">
 		<div class="section-center-head">
-			<div class="bubble-section-pill">ENCOURAGING TUNER</div>
-			<h2>Never feel discouraged by missed notes.</h2>
+			<div class="bubble-section-pill">PITCH FEEDBACK</div>
+			<h2>A smaller pitch window as you practice.</h2>
 			<p>
 				Harmonica Learner starts with a gentle, forgiving pitch window
 				(±30) and tightens automatically as your confidence grows!
@@ -372,44 +333,73 @@
 	</section>
 
 	<!-- Big Cheerful Download CTA -->
-	<section class="bubbly-cta-section">
+	<section class="bubbly-section" id="faq">
+		<div class="section-center-head">
+			<div class="bubble-section-pill">QUESTIONS & ANSWERS</div>
+			<h2>Before you pick up your harmonica.</h2>
+		</div>
+		<FaqList items={FAQS.slice(0, 3)} />
+		<p class="faq-link">
+			<a href={resolve("/faq")}
+				>Read all questions about songs, imports, and practice →</a
+			>
+		</p>
+	</section>
+
+	<section class="bubbly-cta-section" id="download">
 		<div class="bubbly-cta-bubble">
 			<div class="cta-emoji-party">🎈 🎶 ✨ 🎵</div>
 			<h2>Ready to play your first song?</h2>
 			<p>
-				Download Harmonica: Learn to Play on the App Store and start
-				playing in less than 5 minutes.
+				Start with a built-in beginner song. Try up to five Music
+				Library imports; a one-time purchase is required to continue
+				after the fifth. No subscription.
 			</p>
-			<a href={APP_URL} class="bubbly-primary-btn large">
-				<svg
-					class="apple-glyph"
-					viewBox="0 0 24 24"
-					fill="currentColor"
-				>
-					<path
-						d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.76 1.04-1.82.93-2.87-.9.04-2 .6-2.64 1.36-.57.65-.98 1.73-.85 2.76 1.01.08 1.94-.49 2.56-1.25z"
-					/>
-				</svg>
-				<span>Get Harmonica: Learn to Play</span>
-				<span class="btn-arrow">→</span>
-			</a>
+			{#if APP_URL}
+				<a href={APP_URL} class="bubbly-primary-btn large">
+					<svg
+						class="apple-glyph"
+						viewBox="0 0 24 24"
+						fill="currentColor"
+					>
+						<path
+							d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.76 1.04-1.82.93-2.87-.9.04-2 .6-2.64 1.36-.57.65-.98 1.73-.85 2.76 1.01.08 1.94-.49 2.56-1.25z"
+						/>
+					</svg>
+					<span>Get Harmonica: Learn to Play</span>
+					<span class="btn-arrow">→</span>
+				</a>
+			{:else}<p class="download-status">
+					App Store link coming soon.
+				</p>{/if}
 		</div>
 	</section>
 
 	<!-- Cheerful Footer -->
-	<footer class="bubbly-footer">
-		<div class="footer-inner">
-			<span>Made with ❤️ for harmonica lovers everywhere</span>
-			<span>Requires 10-hole Key of C diatonic harmonica • iOS 17+</span>
-			<span
-				>©2026 - {new Date().getFullYear()} Harmonica: Learn to Play by
-				KosuKobo, LLC</span
-			>
-		</div>
-	</footer>
+	<SiteFooter isFaq={false} />
 </div>
 
 <style>
+	.bubbly-root:not(.theme-light) .bubble-section-pill {
+		color: #93c5fd;
+	}
+
+	.preview-caption {
+		font-size: 12px;
+		line-height: 1.5;
+		text-align: center;
+		max-width: 310px;
+		margin: 16px auto 0;
+		color: #94a3b8;
+	}
+	.faq-link {
+		text-align: center;
+		margin-top: 28px;
+	}
+	.download-status {
+		font-weight: 700;
+	}
+
 	.bubbly-root {
 		background: #0d111a;
 		color: #f8fafc;
@@ -490,184 +480,13 @@
 		);
 	}
 
-	/* Navigation */
-	.bubbly-nav {
-		position: sticky;
-		top: 0;
-		z-index: 100;
-		background: rgba(13, 17, 26, 0.85);
-		backdrop-filter: blur(20px);
-		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-		transition: all 0.25s ease;
-	}
-
-	.theme-light .bubbly-nav {
-		background: rgba(251, 251, 249, 0.88);
-		border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-	}
-
-	.nav-wrapper {
-		max-width: 1200px;
-		margin: 0 auto;
-		padding: 16px 24px;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.bubbly-brand {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		text-decoration: none;
-		color: inherit;
-	}
-
-	.brand-mascot-emoji {
-		font-size: 24px;
-		animation: wiggle 2s infinite ease-in-out;
-	}
-
-	@keyframes wiggle {
-		0%,
-		100% {
-			transform: rotate(0deg);
-		}
-		25% {
-			transform: rotate(-8deg);
-		}
-		75% {
-			transform: rotate(8deg);
-		}
-	}
-
-	.brand-text {
-		font-family: "Outfit", sans-serif;
-		font-size: 20px;
-		font-weight: 800;
-		letter-spacing: -0.02em;
-	}
-
-	.pop-highlight {
-		color: #3b82f6;
-	}
-
-	.cute-tag {
-		background: rgba(59, 130, 246, 0.15);
-		color: #60a5fa;
-		font-size: 11px;
-		font-weight: 800;
-		padding: 3px 10px;
-		border-radius: 99px;
-	}
-
-	.theme-light .cute-tag {
-		background: #dbeafe;
-		color: #2563eb;
-	}
-
-	.nav-links {
-		display: flex;
-		gap: 28px;
-	}
-
-	.nav-links a {
-		text-decoration: none;
-		color: #94a3b8;
-		font-size: 14.5px;
-		font-weight: 600;
-		transition: color 0.15s ease;
-	}
-
-	.nav-links a:hover {
-		color: #3b82f6;
-	}
-
-	.theme-light .nav-links a {
-		color: #64748b;
-	}
-
-	.theme-light .nav-links a:hover {
-		color: #2563eb;
-	}
-
-	.nav-actions-group {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-
-	.nav-theme-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		background: rgba(255, 255, 255, 0.08);
-		border: 1px solid rgba(255, 255, 255, 0.12);
-		color: #e2e8f0;
-		padding: 8px 14px;
-		border-radius: 99px;
-		font-size: 12.5px;
-		font-weight: 700;
-		cursor: pointer;
-		transition: all 0.18s ease;
-	}
-
-	.nav-theme-btn:hover {
-		background: rgba(255, 255, 255, 0.14);
-		border-color: #3b82f6;
-		transform: translateY(-1px);
-	}
-
-	.theme-light .nav-theme-btn {
-		background: #ffffff;
-		border-color: rgba(0, 0, 0, 0.08);
-		color: #334155;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-	}
-
-	.theme-light .nav-theme-btn:hover {
-		background: #f1f5f9;
-		border-color: #2563eb;
-	}
-
-	.theme-icon {
-		font-size: 14px;
-	}
-
-	.theme-label {
-		font-size: 12px;
-	}
-
-	.squishy-pill-cta {
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
-		background: #3b82f6;
-		color: #ffffff;
-		text-decoration: none;
-		padding: 10px 20px;
-		border-radius: 99px;
-		font-size: 13.5px;
-		font-weight: 800;
-		box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
-		transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
-	}
-
-	.squishy-pill-cta:hover {
-		transform: scale(1.05) translateY(-1px);
-	}
-
-	.squishy-pill-cta:active {
-		transform: scale(0.96);
-	}
-
 	/* Hero Section */
 	.bubbly-hero {
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 60px 24px 80px;
 		display: grid;
-		grid-template-columns: 1.15fr 0.85fr;
+		grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
 		gap: 48px;
 		align-items: center;
 		position: relative;
@@ -705,12 +524,7 @@
 	}
 
 	.gradient-pop {
-		background: linear-gradient(
-			135deg,
-			#60a5fa 0%,
-			#a855f7 50%,
-			#ec4899 100%
-		);
+		background: #60a5fa;
 		background-clip: text;
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
@@ -860,7 +674,6 @@
 		align-items: center;
 		gap: 10px;
 		box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
-		animation: floatBounce 3s ease-in-out infinite alternate;
 	}
 
 	.theme-light .floating-sticker {
@@ -888,19 +701,16 @@
 	.sticker-top {
 		top: 10%;
 		left: -20px;
-		animation-delay: 0s;
 	}
 
 	.sticker-right {
 		top: 45%;
 		right: -24px;
-		animation-delay: 0.8s;
 	}
 
 	.sticker-bottom {
 		bottom: 12%;
 		left: -10px;
-		animation-delay: 1.6s;
 	}
 
 	@keyframes floatBounce {
@@ -1007,7 +817,7 @@
 		width: 38px;
 		height: 38px;
 		border-radius: 50%;
-		background: #3b82f6;
+		background: #2563eb;
 		color: #ffffff;
 		font-weight: 900;
 		font-size: 14px;
@@ -1139,7 +949,7 @@
 		width: 22px;
 		height: 22px;
 		border-radius: 50%;
-		background: #3b82f6;
+		background: #2563eb;
 		color: #ffffff;
 		display: flex;
 		align-items: center;
@@ -1297,33 +1107,9 @@
 		color: #2563eb;
 	}
 
-	/* Footer */
-	.bubbly-footer {
-		border-top: 1px solid rgba(255, 255, 255, 0.08);
-		padding: 28px 24px;
-		font-size: 13px;
-		color: #64748b;
-	}
-
-	.theme-light .bubbly-footer {
-		border-top: 1px solid rgba(0, 0, 0, 0.06);
-	}
-
-	.footer-inner {
-		max-width: 1200px;
-		margin: 0 auto;
-		display: flex;
-		justify-content: space-between;
-		flex-wrap: wrap;
-		gap: 14px;
-	}
-
 	@media (max-width: 900px) {
 		.bubbly-hero {
 			grid-template-columns: 1fr;
-		}
-		.nav-links {
-			display: none;
 		}
 		.floating-sticker {
 			display: none;

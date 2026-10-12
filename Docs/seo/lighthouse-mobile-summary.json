@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-03",
+  "environment": "Local SvelteKit production preview; not deployed production performance",
+  "url": "http://127.0.0.1:5184/",
+  "lighthouseVersion": "12.8.2",
+  "fetchTime": "2026-10-03T22:07:11.830Z",
+  "scores": {
+    "performance": 99,
+    "accessibility": 100,
+    "seo": 100
+  },
+  "metrics": {
+    "first-contentful-paint": {
+      "value": 1672.5622000000003,
+      "unit": "millisecond",
+      "display": "1.7 s"
+    },
+    "largest-contentful-paint": {
+      "value": 1995.1244000000004,
+      "unit": "millisecond",
+      "display": "2.0 s"
+    },
+    "speed-index": {
+      "value": 1672.5622000000003,
+      "unit": "millisecond",
+      "display": "1.7 s"
+    },
+    "cumulative-layout-shift": {
+      "value": 0,
+      "unit": "unitless",
+      "display": "0"
+    },
+    "total-blocking-time": {
+      "value": 0,
+      "unit": "millisecond",
+      "display": "0 ms"
+    }
+  },
+  "throttling": {
+    "rttMs": 150,
+    "throughputKbps": 1638.4,
+    "requestLatencyMs": 562.5,
+    "downloadThroughputKbps": 1474.5600000000002,
+    "uploadThroughputKbps": 675,
+    "cpuSlowdownMultiplier": 4
+  },
+  "formFactor": "mobile"
+}

@@ -1,45 +1,22 @@
 <script lang="ts">
-	import { onMount } from "svelte";
 	import Landing from "$lib/Landing.svelte";
-
-	let theme = $state<"dark" | "light">("dark");
-
-	onMount(() => {
-		const params = new URLSearchParams(window.location.search);
-		const tParam = params.get("theme");
-		if (tParam === "light" || tParam === "dark") {
-			theme = tParam;
-		} else {
-			const saved = localStorage.getItem("harmonica_theme");
-			if (saved === "light" || saved === "dark") {
-				theme = saved;
-			}
-		}
-	});
-
-	function handleToggleTheme() {
-		theme = theme === "dark" ? "light" : "dark";
-		if (typeof window !== "undefined") {
-			localStorage.setItem("harmonica_theme", theme);
-			const url = new URL(window.location.href);
-			url.searchParams.set("theme", theme);
-			window.history.replaceState({}, "", url.toString());
-		}
-	}
+	import Seo from "$lib/components/Seo.svelte";
+	import { PAGES, jsonLd } from "$lib/site";
+	import { FAQS, faqSchema } from "$lib/faq";
+	import { themeState } from "$lib/theme.svelte";
 </script>
 
+<Seo {...PAGES[0]} />
 <svelte:head>
-	<title
-		>Harmonica: Learn to Play - Turn any song into playable harmonica tabs</title
-	>
+ {@html `<script type="application/ld+json">${jsonLd(faqSchema(FAQS.slice(0, 3)))}</script>`}
 </svelte:head>
 
 <main
 	class="page-container"
-	class:is-light={theme === "light"}
-	data-theme={theme}
+	class:is-light={themeState.current === "light"}
+	data-theme={themeState.current}
 >
-	<Landing {theme} onToggleTheme={handleToggleTheme} />
+	<Landing theme={themeState.current} onToggleTheme={() => themeState.toggleTheme()} />
 </main>
 
 <style>

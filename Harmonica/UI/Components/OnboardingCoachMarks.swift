@@ -618,7 +618,7 @@ struct OnboardingCoachOverlay: View {
         CGRect(x: size.width * 0.2, y: size.height * 0.18, width: size.width * 0.6, height: 50)
     }
 
-    private enum Placement: Equatable {
+    nonisolated private enum Placement: Equatable {
         case below
         case above
         case leading
@@ -661,7 +661,8 @@ struct OnboardingCoachOverlay: View {
         }
     }
 
-    private struct TooltipBubbleShape: Shape {
+    // SwiftUI can evaluate shape geometry outside the main actor.
+    nonisolated private struct TooltipBubbleShape: Shape {
         let placement: Placement
         let caretOffset: CGFloat
 

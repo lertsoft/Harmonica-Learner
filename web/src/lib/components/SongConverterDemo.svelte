@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from "svelte";
 	import { playHarmonicaSound, HARMONICA_C_MAP } from "./audio";
 
 	interface Props {
@@ -10,7 +11,6 @@
 	interface SongPreset {
 		title: string;
 		artist: string;
-		url: string;
 		key: string;
 		tempo: string;
 		tabs: Array<{
@@ -26,7 +26,6 @@
 		{
 			title: "Never Gonna Give You Up",
 			artist: "Rick Astley",
-			url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
 			key: "Key of C Diatonic",
 			tempo: "113 BPM",
 			tabs: [
@@ -133,7 +132,6 @@
 		{
 			title: "Piano Man (Intro Riff)",
 			artist: "Billy Joel",
-			url: "https://youtube.com/watch?v=gxEPV4kolz0",
 			key: "Key of C Diatonic",
 			tempo: "176 BPM (3/4)",
 			tabs: [
@@ -178,543 +176,215 @@
 	];
 
 	let selectedSong = $state<SongPreset>(PRESETS[0]);
-	let inputUrl = $state(PRESETS[0].url);
-	let isAnalyzing = $state(false);
 	let playbackIndex = $state<number | null>(null);
-
+	let playbackGeneration = 0;
+	onDestroy(() => {
+		playbackGeneration++;
+	});
 	function selectPreset(preset: SongPreset) {
+		playbackGeneration++;
 		selectedSong = preset;
-		inputUrl = preset.url;
-		triggerAnalysis();
-	}
-
-	function triggerAnalysis() {
-		isAnalyzing = true;
 		playbackIndex = null;
-
-		const normalized = inputUrl.trim().toLowerCase();
-		const matched = PRESETS.find(
-			(p) =>
-				p.url.toLowerCase() === normalized ||
-				(p.url.includes("v=") &&
-					normalized.includes(p.url.split("v=")[1])) ||
-				(normalized.length > 5 &&
-					p.url.toLowerCase().includes(normalized)) ||
-				p.title.toLowerCase().includes(normalized) ||
-				normalized.includes(p.artist.toLowerCase()),
-		);
-		if (matched) {
-			selectedSong = matched;
-		}
-
-		setTimeout(() => {
-			isAnalyzing = false;
-		}, 850);
 	}
-
 	async function playTabSequence() {
-		if (isAnalyzing) return;
-		for (let i = 0; i < selectedSong.tabs.length; i++) {
+		const generation = ++playbackGeneration;
+		const tabs = selectedSong.tabs;
+		for (let i = 0; i < tabs.length; i++) {
+			if (generation !== playbackGeneration) return;
 			playbackIndex = i;
-			const item = selectedSong.tabs[i];
-			const holeData = HARMONICA_C_MAP[item.hole];
-			const target = item.dir === "blow" ? holeData.blow : holeData.draw;
+			const item = tabs[i];
+			const target = HARMONICA_C_MAP[item.hole][item.dir];
 			playHarmonicaSound(target.freq, item.duration / 1000);
 			await new Promise((r) => setTimeout(r, item.duration + 80));
 		}
-		playbackIndex = null;
+		if (generation === playbackGeneration) playbackIndex = null;
 	}
 </script>
 
 <div class="converter-card" class:theme-light={theme === "light"}>
-	<div class="converter-header">
+	<header>
 		<div>
-			<div class="converter-badge">INSTANT MELODY CONVERTER</div>
-			<div class="converter-title">Paste Any YouTube Song</div>
+			<p class="badge">INTERACTIVE EXAMPLE</p>
+			<h3>Hear a preset arrangement</h3>
 		</div>
-		<div class="presets-row">
+		<div class="presets" aria-label="Choose a sample arrangement">
 			{#each PRESETS as preset}
 				<button
-					class="preset-chip"
 					class:selected={selectedSong.title === preset.title}
-					onclick={() => selectPreset(preset)}
+					aria-pressed={selectedSong.title === preset.title}
+					onclick={() => selectPreset(preset)}>{preset.title}</button
 				>
-					{preset.title}
-				</button>
 			{/each}
 		</div>
-	</div>
-
-	<!-- Input Mockup -->
-	<div class="input-bar-group">
-		<div class="input-icon">
-			<svg viewBox="0 0 24 24" fill="currentColor" class="media-icon">
-				<path
-					d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"
-				/>
-			</svg>
-		</div>
-		<input
-			type="text"
-			bind:value={inputUrl}
-			onkeydown={(e) => {
-				if (e.key === "Enter") triggerAnalysis();
-			}}
-			placeholder="Paste Spotify or YouTube link here..."
-			class="song-url-input"
-		/>
-		<button
-			class="convert-btn"
-			onclick={triggerAnalysis}
-			disabled={isAnalyzing}
-		>
-			{#if isAnalyzing}
-				<span class="spinner"></span> Extracting...
-			{:else}
-				Extract Tabs →
-			{/if}
-		</button>
-	</div>
-
-	<!-- Output Results Container -->
-	<div class="result-box" class:loading={isAnalyzing}>
-		{#if isAnalyzing}
-			<div class="analyzing-state">
-				<div class="wave-loader">
-					<span></span><span></span><span></span><span></span><span
-					></span>
-				</div>
+	</header>
+	<p class="demo-note">Preset tabs and synthesized audio.</p>
+	<div class="result-box">
+		<div class="track-meta">
+			<div>
+				<strong>{selectedSong.title}</strong>
 				<p>
-					Separating lead vocal melody • Quantizing to Key of C
-					diatonic reed map...
+					{selectedSong.artist} · {selectedSong.key} · {selectedSong.tempo}
 				</p>
 			</div>
-		{:else}
-			<div class="result-details">
-				<div class="track-meta">
-					<div>
-						<div class="track-title">{selectedSong.title}</div>
-						<div class="track-artist">
-							{selectedSong.artist} • {selectedSong.key} • {selectedSong.tempo}
-						</div>
-					</div>
-					<button class="play-sequence-btn" onclick={playTabSequence}>
-						<svg
-							viewBox="0 0 24 24"
-							fill="currentColor"
-							class="play-triangle"
-							><polygon points="5 3 19 12 5 21 5 3" /></svg
-						>
-						<span
-							>{playbackIndex !== null
-								? "Playing Sequence..."
-								: "Play Harmonica Tabs"}</span
-						>
-					</button>
-				</div>
-
-				<!-- Tabs Visualization Row -->
-				<div class="tab-blocks-grid">
-					{#each selectedSong.tabs as item, i}
-						<div
-							class="tab-pill-box"
-							class:active={playbackIndex === i}
-							class:is-blow={item.dir === "blow"}
-							class:is-draw={item.dir === "draw"}
-						>
-							<div class="direction-tag">
-								{item.dir === "blow" ? "↑ BLOW" : "↓ DRAW"}
-							</div>
-							<div class="hole-num">
-								{item.dir === "blow"
-									? `+${item.hole}`
-									: `-${item.hole}`}
-							</div>
-							<div class="note-name">{item.note}</div>
-							{#if item.lyric}
-								<div class="lyric-tag">{item.lyric}</div>
-							{/if}
-						</div>
-					{/each}
-				</div>
-
-				<div class="conversion-summary">
-					<span
-						>✓ Extracted into 100% playable 10-hole Key of C
-						diatonic tabs. Ready for Guided Practice.</span
+			<button onclick={playTabSequence} disabled={playbackIndex !== null}
+				>{playbackIndex !== null
+					? "Playing example…"
+					: "Hear example tabs"}</button
+			>
+		</div>
+		<div class="tab-blocks-grid" aria-label="Sample harmonica tabs">
+			{#each selectedSong.tabs as item, i}
+				<div
+					class="tab-pill"
+					class:active={playbackIndex === i}
+					class:draw={item.dir === "draw"}
+				>
+					<span>{item.dir === "blow" ? "↑ BLOW" : "↓ DRAW"}</span>
+					<strong>{item.dir === "blow" ? "+" : "−"}{item.hole}</strong
 					>
+					<span>{item.note}</span>
 				</div>
-			</div>
-		{/if}
+			{/each}
+		</div>
+		<p class="demo-note">Sample arrangement for a 10-hole C harmonica.</p>
 	</div>
 </div>
 
 <style>
 	.converter-card {
-		background: #11141b;
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		padding: 28px;
+		border: 1px solid #334155;
 		border-radius: 24px;
-		padding: 24px;
-		box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-		display: flex;
-		flex-direction: column;
-		gap: 18px;
-		width: 100%;
-	}
-
-	.converter-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-end;
-		flex-wrap: wrap;
-		gap: 16px;
-	}
-
-	.converter-badge {
-		font-size: 10.5px;
-		font-weight: 800;
-		letter-spacing: 0.12em;
-		color: #3b82f6;
-		text-transform: uppercase;
-	}
-
-	.converter-title {
-		font-size: 20px;
-		font-weight: 800;
+		background: #13161f;
 		color: #f8fafc;
-		letter-spacing: -0.02em;
-		margin-top: 2px;
 	}
-
-	.presets-row {
-		display: flex;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-
-	.preset-chip {
-		background: #1c202a;
-		border: 1px solid rgba(255, 255, 255, 0.07);
-		color: #94a3b8;
-		padding: 6px 12px;
-		border-radius: 99px;
-		font-size: 12px;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.15s ease;
-	}
-
-	.preset-chip:hover {
-		color: #ffffff;
-		border-color: rgba(255, 255, 255, 0.2);
-	}
-
-	.preset-chip.selected {
-		background: #2563eb;
-		color: #ffffff;
-		border-color: #3b82f6;
-	}
-
-	.input-bar-group {
-		display: flex;
-		align-items: center;
-		background: #181c25;
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		border-radius: 14px;
-		padding: 6px 8px 6px 14px;
-		gap: 12px;
-	}
-
-	.input-icon {
-		color: #64748b;
-		display: flex;
-		align-items: center;
-	}
-
-	.media-icon {
-		width: 20px;
-		height: 20px;
-	}
-
-	.song-url-input {
-		flex: 1;
-		background: transparent;
-		border: none;
-		color: #ffffff;
-		font-size: 14px;
-		outline: none;
-		font-family: inherit;
-	}
-
-	.song-url-input::placeholder {
-		color: #64748b;
-	}
-
-	.convert-btn {
-		background: #3b82f6;
-		color: #ffffff;
-		border: none;
-		border-radius: 10px;
-		padding: 10px 18px;
-		font-size: 13px;
-		font-weight: 700;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		transition: background 0.15s ease;
-	}
-
-	.convert-btn:hover {
-		background: #2563eb;
-	}
-
-	.spinner {
-		width: 14px;
-		height: 14px;
-		border: 2px solid rgba(255, 255, 255, 0.3);
-		border-top-color: #ffffff;
-		border-radius: 50%;
-		animation: spin 0.6s linear infinite;
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-
-	.result-box {
-		background: #151821;
-		border: 1px solid rgba(255, 255, 255, 0.06);
-		border-radius: 18px;
-		padding: 18px;
-		min-height: 150px;
-	}
-
-	.analyzing-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		height: 120px;
-		gap: 12px;
-		color: #94a3b8;
-		font-size: 13px;
-	}
-
-	.wave-loader {
-		display: flex;
-		gap: 5px;
-		align-items: center;
-		height: 24px;
-	}
-
-	.wave-loader span {
-		width: 4px;
-		height: 10px;
-		background: #3b82f6;
-		border-radius: 2px;
-		animation: bounce 0.8s ease-in-out infinite alternate;
-	}
-
-	.wave-loader span:nth-child(2) {
-		animation-delay: 0.15s;
-	}
-	.wave-loader span:nth-child(3) {
-		animation-delay: 0.3s;
-	}
-	.wave-loader span:nth-child(4) {
-		animation-delay: 0.45s;
-	}
-	.wave-loader span:nth-child(5) {
-		animation-delay: 0.6s;
-	}
-
-	@keyframes bounce {
-		to {
-			height: 24px;
-			background: #60a5fa;
-		}
-	}
-
-	.result-details {
-		display: flex;
-		flex-direction: column;
-		gap: 14px;
-	}
-
+	header,
 	.track-meta {
 		display: flex;
-		justify-content: space-between;
-		align-items: center;
 		flex-wrap: wrap;
-		gap: 12px;
-	}
-
-	.track-title {
-		font-size: 16px;
-		font-weight: 800;
-		color: #ffffff;
-	}
-
-	.track-artist {
-		font-size: 12px;
-		color: #8b95a8;
-		margin-top: 2px;
-	}
-
-	.play-sequence-btn {
-		display: flex;
+		gap: 20px;
 		align-items: center;
-		gap: 8px;
-		background: #232836;
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		color: #e2e8f0;
-		padding: 8px 16px;
-		border-radius: 10px;
-		font-size: 12px;
+		justify-content: space-between;
+	}
+	h3 {
+		font-family: "Outfit", sans-serif;
+		font-size: 24px;
+		margin: 4px 0;
+	}
+	.badge {
+		font-size: 11px;
+		color: #93c5fd;
 		font-weight: 700;
+		letter-spacing: 0.08em;
+		margin: 0;
+	}
+	.presets {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	button {
+		background: #1e293b;
+		color: inherit;
+		border: 1px solid #475569;
+		padding: 10px 14px;
+		border-radius: 12px;
 		cursor: pointer;
-		transition: all 0.15s ease;
 	}
-
-	.play-sequence-btn:hover {
-		background: #2d3445;
-		color: #ffffff;
+	button.selected {
+		border-color: #60a5fa;
+		background: #1e3a5f;
 	}
-
-	.play-triangle {
-		width: 14px;
-		height: 14px;
-		color: #3b82f6;
+	button:disabled {
+		cursor: default;
+		opacity: 0.7;
 	}
-
+	.demo-note,
+	.track-meta p {
+		font-size: 13px;
+		line-height: 1.6;
+		color: #94a3b8;
+	}
+	.result-box {
+		margin-top: 24px;
+		padding: 20px;
+		background: #0d111a;
+		border-radius: 16px;
+		min-height: 260px;
+	}
+	.track-meta p {
+		margin: 4px 0;
+	}
 	.tab-blocks-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
-		gap: 8px;
+		grid-template-columns: repeat(8, minmax(0, 1fr));
+		gap: 10px;
+		margin-top: 24px;
 	}
-
-	.tab-pill-box {
-		background: #1c212d;
-		border: 1px solid rgba(255, 255, 255, 0.06);
-		border-radius: 12px;
-		padding: 10px 8px;
-		text-align: center;
+	.tab-pill {
 		display: flex;
 		flex-direction: column;
-		gap: 3px;
-		transition: all 0.15s ease;
+		text-align: center;
+		gap: 8px;
+		padding: 12px 4px;
+		border: 1px solid #3b82f6;
+		border-radius: 12px;
+		color: #93c5fd;
 	}
-
-	.tab-pill-box.active {
-		border-color: #3b82f6;
-		background: rgba(59, 130, 246, 0.2);
-		transform: translateY(-2px);
-		box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+	.tab-pill.draw {
+		color: #fbbf24;
+		border-color: #b45309;
 	}
-
-	.direction-tag {
-		font-size: 9px;
-		font-weight: 800;
-		letter-spacing: 0.08em;
-	}
-
-	.is-blow .direction-tag {
-		color: #3b82f6;
-	}
-
-	.is-draw .direction-tag {
-		color: #60a5fa;
-	}
-
-	.hole-num {
-		font-size: 18px;
-		font-weight: 900;
-		color: #ffffff;
-	}
-
-	.note-name {
+	.tab-pill span {
 		font-size: 10px;
-		color: #94a3b8;
-		font-family: "JetBrains Mono", monospace;
 	}
-
-	.lyric-tag {
-		font-size: 11px;
-		font-weight: 700;
-		color: #cbd5e1;
-		margin-top: 1px;
+	.tab-pill strong {
+		font:
+			700 24px ui-monospace,
+			monospace;
 	}
-
-	.tab-pill-box.active .lyric-tag {
-		color: #ffffff;
-		font-weight: 800;
+	.tab-pill.active {
+		background: #1e3a5f;
+		box-shadow: 0 0 0 2px #60a5fa;
 	}
-
-	.theme-light .lyric-tag {
-		color: #475569;
-	}
-
-	.theme-light .tab-pill-box.active .lyric-tag {
-		color: #1d4ed8;
-	}
-
-	.conversion-summary {
-		font-size: 11.5px;
-		color: #10b981;
-		font-weight: 600;
-	}
-
-	/* Light Mode Styles */
-	.converter-card.theme-light {
-		background: #ffffff;
-		border-color: rgba(0, 0, 0, 0.08);
-		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
-		color: #0f172a;
-	}
-	.theme-light .converter-title {
-		color: #0f172a;
-	}
-	.theme-light .preset-chip {
-		background: #f1f5f9;
-		border-color: rgba(0, 0, 0, 0.06);
-		color: #475569;
-	}
-	.theme-light .preset-chip.selected {
-		background: #3b82f6;
-		color: #ffffff;
-	}
-	.theme-light .input-bar-group {
-		background: #f8fafc;
-		border-color: rgba(0, 0, 0, 0.08);
-	}
-	.theme-light .song-url-input {
-		color: #0f172a;
+	.theme-light {
+		background: #fff;
+		color: #1e293b;
+		border-color: #cbd5e1;
 	}
 	.theme-light .result-box {
-		background: #f8fafc;
-		border-color: rgba(0, 0, 0, 0.06);
+		background: #f1f5f9;
 	}
-	.theme-light .track-title {
-		color: #0f172a;
+	.theme-light button {
+		background: #fff;
+		border-color: #cbd5e1;
 	}
-	.theme-light .track-artist {
-		color: #64748b;
+	.theme-light button.selected,
+	.theme-light .tab-pill.active {
+		background: #dbeafe;
 	}
-	.theme-light .play-sequence-btn {
-		background: #ffffff;
-		border-color: rgba(0, 0, 0, 0.08);
-		color: #0f172a;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+	.theme-light .tab-pill {
+		color: #1d4ed8;
 	}
-	.theme-light .tab-pill-box {
-		background: #ffffff;
-		border-color: rgba(0, 0, 0, 0.08);
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+	.theme-light .tab-pill.draw {
+		color: #92400e;
 	}
-	.theme-light .hole-num {
-		color: #0f172a;
+	.theme-light .demo-note,
+	.theme-light .track-meta p {
+		color: #475569;
+	}
+	.theme-light .badge {
+		color: #1d4ed8;
+	}
+	@media (max-width: 600px) {
+		.converter-card {
+			padding: 18px;
+		}
+		.result-box {
+			padding: 14px;
+		}
+		.tab-blocks-grid {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+		}
 	}
 </style>

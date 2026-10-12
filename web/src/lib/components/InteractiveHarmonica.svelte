@@ -30,7 +30,7 @@
 
 	function handleKeydown(e: KeyboardEvent) {
 		// Ignore if typing in input
-		if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+		if ((e.target as HTMLElement)?.closest('input, textarea, select, button, a, summary, [contenteditable]')) return;
 
 		if (e.code === 'Space') {
 			e.preventDefault();
@@ -103,7 +103,7 @@
 					class="hole-slot"
 					class:active={activeHole === hole}
 					onclick={() => playHole(hole)}
-					aria-label="Hole {hole} {direction} {currentNote}"
+					aria-label="{hole} {showNotes ? currentNote : ''} — hole {hole}, {direction}"
 				>
 					<span class="hole-number">{hole}</span>
 					<div class="aperture">
@@ -132,6 +132,9 @@
 </div>
 
 <style>
+ .harmonica-instrument:not(.theme-light) .readout-idle,
+ .harmonica-instrument:not(.theme-light) .harmonica-tips { color: #94a3b8; }
+
 	.harmonica-instrument {
 		width: 100%;
 		max-width: 720px;
@@ -180,7 +183,7 @@
 	}
 
 	.breath-toggle-btn.active {
-		background: #3b82f6;
+		background: #2563eb;
 		color: #ffffff;
 		box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
 	}
@@ -214,7 +217,7 @@
 	}
 
 	.readout-freq {
-		font-family: 'JetBrains Mono', monospace;
+		font-family: ui-monospace, monospace;
 		color: #10b981;
 		font-weight: 600;
 	}
@@ -373,7 +376,7 @@
 		font-size: 10px;
 		font-weight: 700;
 		color: #94a3b8;
-		font-family: 'JetBrains Mono', monospace;
+		font-family: ui-monospace, monospace;
 	}
 
 	.hole-slot.active .hole-note {
@@ -472,7 +475,7 @@
 	}
 
 	.theme-light .breath-toggle-btn.active {
-		background: #3b82f6;
+		background: #2563eb;
 		color: #ffffff;
 	}
 
@@ -529,7 +532,7 @@
 	}
 
 	.theme-light .hole-slot.active {
-		background: #3b82f6;
+		background: #2563eb;
 		color: #ffffff;
 	}
 

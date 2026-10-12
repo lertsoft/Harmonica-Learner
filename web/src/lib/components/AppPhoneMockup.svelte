@@ -1,16 +1,26 @@
 <script lang="ts">
-	import { playHarmonicaSound, playNoteByHole, HARMONICA_C_MAP } from './audio';
+	import { resolve } from "$app/paths";
+	import {
+		playHarmonicaSound,
+		playNoteByHole,
+		HARMONICA_C_MAP,
+	} from "./audio";
 
 	interface Props {
-		mode?: 'guided' | 'freestyle';
+		mode?: "guided" | "freestyle";
 		interactive?: boolean;
 		scale?: number;
-		theme?: 'dark' | 'light';
+		theme?: "dark" | "light";
 	}
 
-	let { mode = 'guided', interactive = true, scale = 1, theme = 'dark' }: Props = $props();
+	let {
+		mode = "guided",
+		interactive = true,
+		scale = 1,
+		theme = "dark",
+	}: Props = $props();
 
-	let activeMode = $state<'guided' | 'freestyle'>('guided');
+	let activeMode = $state<"guided" | "freestyle">("guided");
 
 	$effect(() => {
 		activeMode = mode;
@@ -21,24 +31,74 @@
 
 	// Guided mode state
 	const guidedSequence = [
-		{ hole: 4, dir: 'blow' as const, note: 'C5', label: '+4 Blow', sub: '↑ BLOW OUT' },
-		{ hole: 4, dir: 'draw' as const, note: 'D5', label: '-4 Draw', sub: '↓ DRAW IN' },
-		{ hole: 5, dir: 'blow' as const, note: 'E5', label: '+5 Blow', sub: '↑ BLOW OUT' },
-		{ hole: 5, dir: 'draw' as const, note: 'F5', label: '-5 Draw', sub: '↓ DRAW IN' },
-		{ hole: 6, dir: 'blow' as const, note: 'G5', label: '+6 Blow', sub: '↑ BLOW OUT' },
-		{ hole: 6, dir: 'draw' as const, note: 'A5', label: '-6 Draw', sub: '↓ DRAW IN' },
-		{ hole: 7, dir: 'draw' as const, note: 'B5', label: '-7 Draw', sub: '↓ DRAW IN' },
-		{ hole: 7, dir: 'blow' as const, note: 'C6', label: '+7 Blow', sub: '↑ BLOW OUT' }
+		{
+			hole: 4,
+			dir: "blow" as const,
+			note: "C5",
+			label: "+4 Blow",
+			sub: "↑ BLOW OUT",
+		},
+		{
+			hole: 4,
+			dir: "draw" as const,
+			note: "D5",
+			label: "-4 Draw",
+			sub: "↓ DRAW IN",
+		},
+		{
+			hole: 5,
+			dir: "blow" as const,
+			note: "E5",
+			label: "+5 Blow",
+			sub: "↑ BLOW OUT",
+		},
+		{
+			hole: 5,
+			dir: "draw" as const,
+			note: "F5",
+			label: "-5 Draw",
+			sub: "↓ DRAW IN",
+		},
+		{
+			hole: 6,
+			dir: "blow" as const,
+			note: "G5",
+			label: "+6 Blow",
+			sub: "↑ BLOW OUT",
+		},
+		{
+			hole: 6,
+			dir: "draw" as const,
+			note: "A5",
+			label: "-6 Draw",
+			sub: "↓ DRAW IN",
+		},
+		{
+			hole: 7,
+			dir: "draw" as const,
+			note: "B5",
+			label: "-7 Draw",
+			sub: "↓ DRAW IN",
+		},
+		{
+			hole: 7,
+			dir: "blow" as const,
+			note: "C6",
+			label: "+7 Blow",
+			sub: "↑ BLOW OUT",
+		},
 	];
 
 	let currentIndex = $state(0);
 	let currentStep = $derived(guidedSequence[currentIndex]);
-	let progressPercent = $derived(((currentIndex + 1) / guidedSequence.length) * 100);
+	let progressPercent = $derived(
+		((currentIndex + 1) / guidedSequence.length) * 100,
+	);
 
 	// Freestyle tuner state
 	let freestyleDetecting = $state(false);
 	let freestyleCents = $state(3);
-	let detectedNote = $state('C5');
+	let detectedNote = $state("C5");
 
 	function handleHoleClick(hole: number) {
 		if (!interactive) return;
@@ -48,7 +108,7 @@
 
 	function playCurrentStepSound() {
 		const target = HARMONICA_C_MAP[currentStep.hole];
-		const noteData = currentStep.dir === 'blow' ? target.blow : target.draw;
+		const noteData = currentStep.dir === "blow" ? target.blow : target.draw;
 		isPlaying = true;
 		playHarmonicaSound(noteData.freq, 0.7);
 		setTimeout(() => {
@@ -62,7 +122,8 @@
 	}
 
 	function prevStep() {
-		currentIndex = (currentIndex - 1 + guidedSequence.length) % guidedSequence.length;
+		currentIndex =
+			(currentIndex - 1 + guidedSequence.length) % guidedSequence.length;
 		playCurrentStepSound();
 	}
 
@@ -78,14 +139,14 @@
 		freestyleDetecting = !freestyleDetecting;
 		if (freestyleDetecting) {
 			playHarmonicaSound(523.25, 0.5);
-			detectedNote = 'C5';
+			detectedNote = "C5";
 			freestyleCents = 1;
 		}
 	}
 </script>
 
 <div class="mockup-wrapper" style="--scale: {scale}">
-	<div class="iphone-frame" class:theme-light={theme === 'light'}>
+	<div class="iphone-frame" class:theme-light={theme === "light"}>
 		<!-- Screen Glass Glow / Reflection -->
 		<div class="glass-reflection" aria-hidden="true"></div>
 
@@ -98,7 +159,11 @@
 		<div class="status-bar" aria-hidden="true">
 			<span class="time">12:45</span>
 			<div class="status-icons">
-				<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.28 19.58 10.59 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>
+				<svg class="icon" viewBox="0 0 24 24" fill="currentColor"
+					><path
+						d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.28 19.58 10.59 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9z"
+					/></svg
+				>
 				<span class="battery"><b>63</b></span>
 			</div>
 		</div>
@@ -112,43 +177,87 @@
 					<div class="app-subtitle">Listen • Match • Move</div>
 				</div>
 				<div class="header-actions">
-					<button class="icon-circle-btn" aria-label="Library">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-					</button>
-					<button class="icon-circle-btn" aria-label="Settings">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-					</button>
+					<a
+						class="icon-circle-btn"
+						href={`${resolve("/")}#songs`}
+						aria-label="Explore the built-in songs"
+					>
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path
+								d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"
+							/></svg
+						>
+					</a>
+					<a
+						class="icon-circle-btn"
+						href={resolve("/faq")}
+						aria-label="Read the FAQ"
+					>
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							><line x1="4" y1="21" x2="4" y2="14" /><line
+								x1="4"
+								y1="10"
+								x2="4"
+								y2="3"
+							/><line x1="12" y1="21" x2="12" y2="12" /><line
+								x1="12"
+								y1="8"
+								x2="12"
+								y2="3"
+							/><line x1="20" y1="21" x2="20" y2="16" /><line
+								x1="20"
+								y1="12"
+								x2="20"
+								y2="3"
+							/><line x1="1" y1="14" x2="7" y2="14" /><line
+								x1="9"
+								y1="8"
+								x2="15"
+								y2="8"
+							/><line x1="17" y1="16" x2="23" y2="16" /></svg
+						>
+					</a>
 				</div>
 			</div>
 
 			<!-- Segmented Control: Guided vs Freestyle -->
-			<div class="segmented-control" role="tablist">
+			<div
+				class="segmented-control"
+				role="group"
+				aria-label="Preview practice mode"
+			>
 				<button
 					class="segment"
-					class:active={activeMode === 'guided'}
-					onclick={() => (activeMode = 'guided')}
-					role="tab"
-					aria-selected={activeMode === 'guided'}
+					class:active={activeMode === "guided"}
+					onclick={() => (activeMode = "guided")}
+					aria-pressed={activeMode === "guided"}
 				>
 					Guided
 				</button>
 				<button
 					class="segment"
-					class:active={activeMode === 'freestyle'}
-					onclick={() => (activeMode = 'freestyle')}
-					role="tab"
-					aria-selected={activeMode === 'freestyle'}
+					class:active={activeMode === "freestyle"}
+					onclick={() => (activeMode = "freestyle")}
+					aria-pressed={activeMode === "freestyle"}
 				>
 					Freestyle
 				</button>
 			</div>
 
 			<!-- Mode Content -->
-			{#if activeMode === 'guided'}
+			{#if activeMode === "guided"}
 				<!-- Guided Practice View -->
 				<div class="card song-pill-card">
 					<div class="card-caption">Song</div>
-					<div class="song-name">C Major Scale</div>
+					<div class="song-name">Scale excerpt</div>
 				</div>
 
 				<!-- Main Play Card -->
@@ -156,17 +265,51 @@
 					<div class="play-label">PLAY</div>
 
 					<div class="play-hero-row">
-						<button class="round-control" onclick={prevStep} aria-label="Restart note">
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+						<button
+							class="round-control"
+							onclick={prevStep}
+							aria-label="Restart note"
+						>
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2.5"
+								><path d="M1 4v6h6" /><path
+									d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"
+								/></svg
+							>
 						</button>
 
-						<div class="hero-note-display" class:pulse-hit={isPlaying}>
-							<div class="note-main-text">{currentStep.label}</div>
-							<div class="note-pitch-text">Concert pitch {currentStep.note}</div>
+						<div
+							class="hero-note-display"
+							class:pulse-hit={isPlaying}
+						>
+							<div class="note-main-text">
+								{currentStep.label}
+							</div>
+							<div class="note-pitch-text">
+								Concert pitch {currentStep.note}
+							</div>
 						</div>
 
-						<button class="round-control" onclick={nextStep} aria-label="Next note">
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+						<button
+							class="round-control"
+							onclick={nextStep}
+							aria-label="Next note"
+						>
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2.5"
+								><polygon points="5 4 15 12 5 20 5 4" /><line
+									x1="19"
+									y1="5"
+									x2="19"
+									y2="19"
+								/></svg
+							>
 						</button>
 					</div>
 
@@ -177,8 +320,14 @@
 								<div class="indicator-col">
 									<div class="dot-marker"></div>
 									{#if hole === currentStep.hole}
-										<div class="arrow-cue" class:draw={currentStep.dir === 'draw'}>
-											{currentStep.dir === 'blow' ? '↑' : '↓'}
+										<div
+											class="arrow-cue"
+											class:draw={currentStep.dir ===
+												"draw"}
+										>
+											{currentStep.dir === "blow"
+												? "↑"
+												: "↓"}
 										</div>
 									{:else}
 										<div class="arrow-cue spacer"></div>
@@ -194,7 +343,10 @@
 								</div>
 							{/each}
 						</div>
-						<div class="airflow-text" class:draw={currentStep.dir === 'draw'}>
+						<div
+							class="airflow-text"
+							class:draw={currentStep.dir === "draw"}
+						>
 							{currentStep.sub}
 						</div>
 					</div>
@@ -204,22 +356,27 @@
 						<div class="mic-info">
 							<div class="mic-headline">
 								{#if isListening}
-									<span class="active-dot"></span> Listening in real time
+									<span class="active-dot"></span> Simulated pitch
+									feedback
 								{:else}
-									Microphone off
+									Preview paused
 								{/if}
 							</div>
 							<div class="mic-sub">
-								{isListening ? 'Play note on your harmonica' : 'Start practice when you’re ready.'}
+								{isListening
+									? "Tap a hole to hear a tone"
+									: "Enable the preview when ready."}
 							</div>
 						</div>
 						<button
 							class="speaker-btn"
 							onclick={() => (isListening = !isListening)}
-							aria-label="Audio feedback"
+							aria-label="Toggle simulated pitch feedback"
 						>
 							<svg viewBox="0 0 24 24" fill="currentColor">
-								<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+								<path
+									d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"
+								/>
 							</svg>
 						</button>
 					</div>
@@ -228,8 +385,10 @@
 				<!-- Note Progression Card -->
 				<div class="card queue-card">
 					<div class="queue-header">
-						<span class="queue-title">C Major Scale</span>
-						<span class="queue-step">{currentIndex + 1}/{guidedSequence.length}</span>
+						<span class="queue-title">Scale excerpt</span>
+						<span class="queue-step"
+							>{currentIndex + 1}/{guidedSequence.length}</span
+						>
 					</div>
 					<div class="queue-pills-row">
 						{#each guidedSequence as item, i}
@@ -242,29 +401,62 @@
 									playCurrentStepSound();
 								}}
 							>
-								<span class="chip-tab">{item.dir === 'blow' ? `+${item.hole}` : `-${item.hole}`}</span>
+								<span class="chip-tab"
+									>{item.dir === "blow"
+										? `+${item.hole}`
+										: `-${item.hole}`}</span
+								>
 								<span class="chip-note">{item.note}</span>
 							</button>
 						{/each}
 					</div>
 					<!-- Progress Track -->
 					<div class="progress-bar-track">
-						<div class="progress-bar-fill" style="width: {progressPercent}%"></div>
+						<div
+							class="progress-bar-fill"
+							style="width: {progressPercent}%"
+						></div>
 					</div>
 				</div>
 
 				<!-- Sticky Bottom Action Bar -->
 				<div class="bottom-action-dock">
 					<button class="primary-blue-btn" onclick={togglePractice}>
-						<svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
-							<path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-							<path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+						<svg
+							class="btn-icon"
+							viewBox="0 0 24 24"
+							fill="currentColor"
+						>
+							<path
+								d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"
+							/>
+							<path
+								d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"
+							/>
 						</svg>
-						<span>{isPlaying ? 'Playing Note...' : 'Start Practice'}</span>
+						<span
+							>{isPlaying
+								? "Playing Note..."
+								: "Hear reference note"}</span
+						>
 					</button>
-					<button class="secondary-btn" aria-label="Tabs song sheet">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-					</button>
+					<a
+						class="secondary-btn"
+						href="#converter"
+						aria-label="Explore sample tabs"
+					>
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.2"
+							><path d="M9 18V5l12-2v13" /><circle
+								cx="6"
+								cy="18"
+								r="3"
+							/><circle cx="18" cy="16" r="3" /></svg
+						>
+					</a>
 				</div>
 			{:else}
 				<!-- Freestyle Mode View (Exact Replica of Screenshot 2 & 3) -->
@@ -276,17 +468,31 @@
 				<!-- Freestyle Pitch & Tuner Card -->
 				<div class="card freestyle-card">
 					<div class="tuner-top-row">
-						<span class="status-badge" class:detecting={freestyleDetecting}>
-							<span class="dot">●</span> {freestyleDetecting ? 'Recording' : 'Ready'}
+						<span
+							class="status-badge"
+							class:detecting={freestyleDetecting}
+						>
+							<span class="dot">●</span>
+							{freestyleDetecting ? "Simulating" : "Ready"}
 						</span>
-						<span class="timer-display">{freestyleDetecting ? '00:14' : '00:00'}</span>
+						<span class="timer-display"
+							>{freestyleDetecting ? "00:14" : "00:00"}</span
+						>
 					</div>
 
-					<div class="detected-label">Detected</div>
+					<div class="detected-label">Example pitch</div>
 					<div class="detected-main-row">
-						<span class="detected-pitch">{freestyleDetecting ? detectedNote : '--'}</span>
-						<span class="detected-cents" class:in-tune={freestyleDetecting && Math.abs(freestyleCents) < 5}>
-							{freestyleDetecting ? `+${freestyleCents}¢ In tune` : '--¢ No signal'}
+						<span class="detected-pitch"
+							>{freestyleDetecting ? detectedNote : "--"}</span
+						>
+						<span
+							class="detected-cents"
+							class:in-tune={freestyleDetecting &&
+								Math.abs(freestyleCents) < 5}
+						>
+							{freestyleDetecting
+								? `+${freestyleCents}¢ In tune`
+								: "--¢ No signal"}
 						</span>
 					</div>
 
@@ -295,12 +501,16 @@
 						<div class="tuner-center-mark"></div>
 						<div
 							class="tuner-thumb-dot"
-							style="left: {freestyleDetecting ? 50 + freestyleCents * 2 : 50}%"
+							style="left: {freestyleDetecting
+								? 50 + freestyleCents * 2
+								: 50}%"
 						></div>
 					</div>
 
 					<div class="freestyle-guidance">
-						{freestyleDetecting ? 'Listening to audio signal via microphone.' : 'Start recording when you’re ready to capture notes and audio.'}
+						{freestyleDetecting
+							? "Showing a preset recording."
+							: "Try the simulated tuner with a synthesized note."}
 					</div>
 				</div>
 
@@ -312,7 +522,11 @@
 						onclick={toggleFreestyleRecord}
 					>
 						<span class="record-dot"></span>
-						<span>{freestyleDetecting ? 'Stop Recording' : 'Record Freestyle'}</span>
+						<span
+							>{freestyleDetecting
+								? "Stop example"
+								: "Try Freestyle example"}</span
+						>
 					</button>
 				</div>
 			{/if}
@@ -324,6 +538,21 @@
 </div>
 
 <style>
+	.hole-indicators {
+		overflow-x: auto;
+	}
+	.indicator-col {
+		min-width: 24px;
+	}
+	.hole-btn {
+		min-width: 24px;
+		min-height: 28px;
+	}
+	.icon-circle-btn,
+	.secondary-btn {
+		text-decoration: none;
+	}
+
 	.mockup-wrapper {
 		display: inline-flex;
 		justify-content: center;
@@ -332,7 +561,7 @@
 	}
 
 	.iphone-frame {
-		width: 320px;
+		width: min(320px, calc(100vw - 48px));
 		height: 680px;
 		background: #090b0e;
 		border-radius: 46px;
@@ -346,7 +575,7 @@
 		user-select: none;
 		display: flex;
 		flex-direction: column;
-		font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+		font-family: "Plus Jakarta Sans", sans-serif;
 	}
 
 	.glass-reflection {
@@ -355,7 +584,11 @@
 		left: 0;
 		right: 0;
 		height: 240px;
-		background: linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0) 60%);
+		background: linear-gradient(
+			135deg,
+			rgba(255, 255, 255, 0.07) 0%,
+			rgba(255, 255, 255, 0) 60%
+		);
 		pointer-events: none;
 		z-index: 10;
 	}
@@ -533,7 +766,7 @@
 	.play-label {
 		text-align: center;
 		font-size: 9px;
-		color: #7c8597;
+		color: #94a3b8;
 		letter-spacing: 0.14em;
 		font-weight: 700;
 	}
@@ -644,7 +877,7 @@
 	}
 
 	.hole-btn.active {
-		background: #3b82f6;
+		background: #2563eb;
 		color: #ffffff;
 		box-shadow: 0 0 10px rgba(59, 130, 246, 0.45);
 	}
@@ -691,7 +924,7 @@
 
 	.mic-sub {
 		font-size: 9px;
-		color: #7e8799;
+		color: #94a3b8;
 	}
 
 	.speaker-btn {
@@ -729,7 +962,7 @@
 	}
 
 	.queue-step {
-		color: #7b8599;
+		color: #94a3b8;
 		font-size: 10px;
 	}
 
@@ -777,7 +1010,7 @@
 
 	.chip-note {
 		font-size: 8px;
-		opacity: 0.75;
+		opacity: 1;
 	}
 
 	.progress-bar-track {
@@ -789,7 +1022,7 @@
 
 	.progress-bar-fill {
 		height: 100%;
-		background: #3b82f6;
+		background: #2563eb;
 		transition: width 0.3s ease;
 	}
 
@@ -824,14 +1057,14 @@
 	}
 
 	.timer-display {
-		font-family: 'JetBrains Mono', monospace;
+		font-family: ui-monospace, monospace;
 		font-weight: 700;
 		color: #d1d5db;
 	}
 
 	.detected-label {
 		font-size: 10px;
-		color: #7b8599;
+		color: #94a3b8;
 	}
 
 	.detected-main-row {
@@ -848,7 +1081,7 @@
 
 	.detected-cents {
 		font-size: 11px;
-		color: #7b8599;
+		color: #94a3b8;
 		font-weight: 600;
 	}
 
@@ -903,7 +1136,7 @@
 		flex: 1;
 		height: 42px;
 		border-radius: 12px;
-		background: #3b82f6;
+		background: #2563eb;
 		border: none;
 		color: #ffffff;
 		font-size: 13px;
@@ -914,7 +1147,9 @@
 		gap: 8px;
 		cursor: pointer;
 		box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
-		transition: transform 0.15s, background 0.15s;
+		transition:
+			transform 0.15s,
+			background 0.15s;
 	}
 
 	.primary-blue-btn:hover {
@@ -1043,7 +1278,7 @@
 		color: #475569;
 	}
 	.theme-light .hole-btn.active {
-		background: #3b82f6;
+		background: #2563eb;
 		color: #ffffff;
 	}
 	.theme-light .mic-status-row {

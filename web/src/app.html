@@ -5,6 +5,23 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="color-scheme" content="light dark" />
 		<meta name="theme-color" content="#faf6ee" />
+		<script>
+			(function() {
+				try {
+					var p = new URLSearchParams(window.location.search).get('theme');
+					var s = (!p || (p !== 'light' && p !== 'dark')) ? localStorage.getItem('harmonica_theme') : p;
+					var isLight = s === 'light' || (!s && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+					var root = document.documentElement;
+					if (isLight) {
+						root.classList.add('theme-light');
+						root.setAttribute('data-theme', 'light');
+					} else {
+						root.classList.remove('theme-light');
+						root.setAttribute('data-theme', 'dark');
+					}
+				} catch (e) {}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

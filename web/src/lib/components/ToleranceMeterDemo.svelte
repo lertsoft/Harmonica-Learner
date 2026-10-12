@@ -1,14 +1,16 @@
 <script lang="ts">
-	import { playHarmonicaSound } from './audio';
+	import { playHarmonicaSound } from "./audio";
 
 	interface Props {
-		theme?: 'dark' | 'light';
+		theme?: "dark" | "light";
 	}
 
-	let { theme = 'dark' }: Props = $props();
+	let { theme = "dark" }: Props = $props();
 
 	let attemptCount = $state(4);
-	let currentTolerance = $derived(Math.max(15, Math.round(30 - (attemptCount / 20) * 15)));
+	let currentTolerance = $derived(
+		30 - (Math.min(20, Math.max(0, attemptCount)) / 20) * 15,
+	);
 	let testPitchCents = $state(18);
 	let isTesting = $state(false);
 	let isPass = $derived(Math.abs(testPitchCents) <= currentTolerance);
@@ -25,7 +27,7 @@
 	}
 </script>
 
-<div class="tolerance-box" class:theme-light={theme === 'light'}>
+<div class="tolerance-box" class:theme-light={theme === "light"}>
 	<div class="tolerance-header">
 		<div>
 			<div class="badge">SMART ADAPTIVE ENGINE</div>
@@ -38,18 +40,26 @@
 	</div>
 
 	<p class="description">
-		Harmonica Learner automatically loosens pitch tolerance (±30¢) while you discover breath mechanics, then tightens to studio precision (±15¢) as your control solidifies.
+		Harmonica: Learn to Play automatically loosens pitch tolerance (±30¢)
+		while you discover breath mechanics, then tightens to studio precision
+		(±15¢) as your control solidifies.
 	</p>
 
 	<!-- Attempt Slider -->
 	<div class="slider-row">
 		<div class="slider-label">
 			<span>Practice Attempt: <strong>#{attemptCount}</strong></span>
-			<span class="attempt-stage">{attemptCount < 7 ? 'Gentle Onboarding' : attemptCount < 14 ? 'Skill Building' : 'Mastery Calibration'}</span>
+			<span class="attempt-stage"
+				>{attemptCount < 7
+					? "Gentle Onboarding"
+					: attemptCount < 14
+						? "Skill Building"
+						: "Mastery Calibration"}</span
+			>
 		</div>
 		<input
 			type="range"
-			min="1"
+			min="0"
 			max="20"
 			bind:value={attemptCount}
 			class="attempt-slider"
@@ -68,7 +78,8 @@
 			<!-- Tolerance Window Zone -->
 			<div
 				class="tolerance-zone"
-				style="width: {(currentTolerance * 2)}%; left: {50 - currentTolerance}%"
+				style="width: {currentTolerance * 2}%; left: {50 -
+					currentTolerance}%"
 			>
 				<span class="zone-tag">±{currentTolerance}¢</span>
 			</div>
@@ -86,15 +97,25 @@
 		<div class="gauge-footer">
 			<div class="test-buttons">
 				<span>Simulate note test:</span>
-				<button class="chip-btn" onclick={() => runPitchTest(4)}>In Tune (+4¢)</button>
-				<button class="chip-btn" onclick={() => runPitchTest(18)}>Slight Bend (+18¢)</button>
-				<button class="chip-btn" onclick={() => runPitchTest(-28)}>Loose Breath (-28¢)</button>
+				<button class="chip-btn" onclick={() => runPitchTest(4)}
+					>In Tune (+4¢)</button
+				>
+				<button class="chip-btn" onclick={() => runPitchTest(18)}
+					>Slight Bend (+18¢)</button
+				>
+				<button class="chip-btn" onclick={() => runPitchTest(-28)}
+					>Loose Breath (-28¢)</button
+				>
 			</div>
 			<div class="result-feedback" class:pass={isPass}>
 				{#if isPass}
-					✓ Hit Registered (+{testPitchCents}¢ within ±{currentTolerance}¢)
+					✓ Hit Registered ({testPitchCents > 0
+						? "+"
+						: ""}{testPitchCents}¢ within ±{currentTolerance}¢)
 				{:else}
-					✕ Needs adjustment ({testPitchCents > 0 ? '+' : ''}{testPitchCents}¢ outside ±{currentTolerance}¢)
+					✕ Needs adjustment ({testPitchCents > 0
+						? "+"
+						: ""}{testPitchCents}¢ outside ±{currentTolerance}¢)
 				{/if}
 			</div>
 		</div>
@@ -102,6 +123,13 @@
 </div>
 
 <style>
+	.tolerance-box:not(.theme-light) .gauge-labels {
+		color: #94a3b8;
+	}
+	.tolerance-box:not(.theme-light) .zone-tag {
+		color: #6ee7b7;
+	}
+
 	.tolerance-box {
 		background: #13161f;
 		border: 1px solid rgba(255, 255, 255, 0.08);
@@ -146,7 +174,7 @@
 		font-size: 18px;
 		font-weight: 900;
 		color: #10b981;
-		font-family: 'JetBrains Mono', monospace;
+		font-family: ui-monospace, monospace;
 	}
 
 	.window-metric .label {

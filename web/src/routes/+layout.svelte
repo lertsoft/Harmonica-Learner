@@ -1,38 +1,33 @@
 <script lang="ts">
-	import "$lib/theme.css";
-	import favicon from "$lib/assets/favicon.svg";
+	import { onMount } from 'svelte';
+	import '$lib/theme.css';
+	import favicon from '$lib/assets/favicon.svg';
+	import outfit from '$lib/assets/fonts/outfit-latin.woff2';
+	import { SEARCH_CONSOLE_VERIFICATION } from '$lib/site';
+	import { themeState } from '$lib/theme.svelte';
 
 	let { children } = $props();
+
+	onMount(() => {
+		themeState.init();
+	});
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+		if (e.key.toLowerCase() === 't') {
+			themeState.toggleTheme();
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<meta
-		name="description"
-		content="Harmonica: Learn to Play turns any song into playable Key of C harmonica tabs with live pitch feedback."
-	/>
-	<meta
-		property="og:title"
-		content="Harmonica: Learn to Play — Turn any song into playable harmonica tabs"
-	/>
-	<meta
-		property="og:description"
-		content="Turn any song in your library into playable harmonica tabs. Get hole + blow/draw tabs. Practice with real-time pitch feedback."
-	/>
-	<meta property="og:type" content="website" />
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link
-		rel="preconnect"
-		href="https://fonts.gstatic.com"
-		crossorigin="anonymous"
-	/>
-	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-	<link
-		href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,650;0,9..144,750;1,9..144,550;1,9..144,650&family=Instrument+Sans:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
-		rel="stylesheet"
-	/>
+	<link rel="preload" href={outfit} as="font" type="font/woff2" crossorigin="anonymous" />
+	{#if SEARCH_CONSOLE_VERIFICATION}<meta name="google-site-verification" content={SEARCH_CONSOLE_VERIFICATION} />{/if}
 </svelte:head>
 
-<div class="layout-root" id="top">
+<div class="layout-root" class:theme-light={themeState.current === 'light'} data-theme={themeState.current}>
 	{@render children()}
 </div>
